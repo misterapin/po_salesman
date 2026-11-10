@@ -19,9 +19,12 @@ class HttpError extends Error {
 }
 
 function serviceHeaders(key, extra = {}) {
-    const h = { apikey: key, 'Content-Type': 'application/json', ...extra };
-    if (key.startsWith('eyJ')) h.Authorization = `Bearer ${key}`; // kunci lama berformat JWT
-    return h;
+    return {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        ...extra
+    };
 }
 
 async function sbFetch(url, options) {

@@ -24,6 +24,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -413,7 +414,7 @@
     </main>
 
     <!-- ================= HIDDEN CONTAINER FOR A4 REPORT IMAGE EXPORT ================= -->
-    <div id="printable-laporan-a4-wrapper" class="fixed -top-[9999px] -left-[9999px] z-50">
+    <div id="printable-laporan-a4-wrapper" style="display: none;">
         <div id="printable-laporan-a4" class="bg-white p-10 w-[794px] text-xs font-sans space-y-6">
             <div class="text-center border-b border-gray-300 pb-4">
                 <h1 class="text-xl font-extrabold text-gray-900 tracking-wide">REKAPITULASI NOTA PESANAN TOKO</h1>
@@ -439,7 +440,7 @@
                 <div class="relative">
                     <label class="block text-xs font-semibold text-gray-600 uppercase mb-1">Cari / Pilih Toko Pelanggan</label>
                     <input type="hidden" id="pesanan-pelanggan-id">
-                    <input type="text" id="pesanan-pelanggan-input" oninput="onPelangganInput()" placeholder="Ketik nama toko pelanggan..." class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary bg-white">
+                    <input type="text" id="pesanan-pelanggan-input" oninput="onPelangganInput()" onfocus="onPelangganInput()" autocomplete="off" placeholder="Ketik atau pilih nama toko pelanggan..." class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary bg-white">
                     <div id="pelanggan-dropdown-list" class="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto hidden">
                         <!-- List populated by JS -->
                     </div>
@@ -547,11 +548,13 @@
                 <!-- Area Nota yang akan di-capture jadi Gambar -->
                 <div id="printable-invoice" class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4 text-xs font-sans">
                     <div class="text-center border-b border-dashed border-gray-300 pb-3">
+                        <span class="inline-block bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full mb-1">NOTA PENJUALAN</span>
                         <h2 id="inv-nama-toko" class="font-bold text-base text-gray-900">Nama Toko / Pelanggan</h2>
                         <p id="inv-alamat-toko" class="text-gray-500">Alamat Toko</p>
                     </div>
                     <div class="space-y-1 text-gray-700">
-                        <div class="flex justify-between"><span class="font-semibold">Tanggal:</span> <span id="inv-date"></span></div>
+                        <div class="flex justify-between"><span class="font-semibold text-gray-500">No. Nota:</span> <span id="inv-no-nota" class="font-mono font-bold text-gray-800"></span></div>
+                        <div class="flex justify-between"><span class="font-semibold text-gray-500">Tanggal:</span> <span id="inv-date"></span></div>
                     </div>
                     <div class="border-t border-dashed border-gray-300 pt-3">
                         <table class="w-full text-left">

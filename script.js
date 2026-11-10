@@ -55,7 +55,9 @@ function toLocalDateStr(input) {
 // ================= KONEKSI SUPABASE =================
 let sb = null;
 try {
-    sb = window.supabase.createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON_KEY);
+    if (window.supabase && window.APP_CONFIG && window.APP_CONFIG.SUPABASE_URL && window.APP_CONFIG.SUPABASE_ANON_KEY) {
+        sb = window.supabase.createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_ANON_KEY);
+    }
 } catch (e) {
     console.error('Supabase belum siap:', e);
 }
@@ -146,14 +148,24 @@ async function reloadPesanan() {
 async function callUsersApi(method, body) {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) throw new Error('Sesi habis. Silakan login ulang.');
-    const res = await fetch('/api/users', {
-        method,
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
-        body: JSON.stringify(body)
-    });
+    let res;
+    try {
+        res = await fetch('/api/users', {
+            method,
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+            body: JSON.stringify(body)
+        });
+    } catch (err) {
+        throw new Error('Tidak dapat terhubung ke endpoint /api/users. Pastikan backend serverless Vercel aktif.');
+    }
     let json = {};
     try { json = await res.json(); } catch (e) { /* bukan JSON */ }
-    if (!res.ok) throw new Error(json.error || ('Permintaan gagal (' + res.status + ')'));
+    if (!res.ok) {
+        if (res.status === 404) {
+            throw new Error('Endpoint /api/users tidak ditemukan (404). Fitur ini membutuhkan deploy di Vercel dengan environment variables Supabase.');
+        }
+        throw new Error(json.error || ('Permintaan gagal (' + res.status + ')'));
+    }
     return json;
 }
 
@@ -311,9 +323,21 @@ async function logout() {
 
 async function initAuth() {
     const cfg = window.APP_CONFIG;
-    if (!sb || !cfg || /GANTI/.test(cfg.SUPABASE_URL || '')) {
+    if (!window.supabase) {
+        showLoginError('Gagal memuat library Supabase dari CDN. Periksa koneksi internet Anda lalu muat ulang halaman.');
+        return;
+    }
+    if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY || /GANTI/.test(cfg.SUPABASE_URL || '')) {
         showLoginError('Konfigurasi Supabase belum diisi. Edit file config.js (URL & anon key), lalu deploy ulang.');
         return;
+    }
+    if (!sb) {
+        try {
+            sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+        } catch (e) {
+            showLoginError('Inisialisasi Supabase gagal: ' + e.message);
+            return;
+        }
     }
     try {
         const { data: { session } } = await sb.auth.getSession();
@@ -650,7 +674,11 @@ function editProduk(id) {
 
 async function deleteProduk(id) {
     if (!requirePerm('produk.write')) return;
-    if (!confirm('Yakin ingin menghapus produk ini?')) return;
+    const hasPesanan = pesananList.some(o => (o.items || []).some(i => i.produkId === id));
+    const msg = hasPesanan
+        ? 'Produk ini pernah digunakan dalam pesanan. Menghapusnya tidak akan merusak riwayat nota lama. Yakin ingin menghapus produk ini?'
+        : 'Yakin ingin menghapus produk ini?';
+    if (!confirm(msg)) return;
     try {
         await dbDelete('produk', id);
     } catch (err) {
@@ -748,7 +776,11 @@ function editPelanggan(id) {
 
 async function deletePelanggan(id) {
     if (!requirePerm('pelanggan.delete')) return;
-    if (!confirm('Yakin ingin menghapus pelanggan ini?')) return;
+    const hasPesanan = pesananList.some(o => o.pelangganId === id);
+    const msg = hasPesanan 
+        ? 'Pelanggan ini memiliki riwayat pesanan. Jika dihapus, pesanan terkait akan tetap tersimpan namun nama pelanggan menjadi "Umum". Yakin ingin menghapus?'
+        : 'Yakin ingin menghapus pelanggan ini?';
+    if (!confirm(msg)) return;
     try {
         await dbDelete('pelanggan', id);
     } catch (err) {
@@ -848,28 +880,34 @@ function closeModalPesanan() {
 
 // ================= AUTOCOMPLETE PELANGGAN =================
 function onPelangganInput() {
-    const keyword = document.getElementById('pesanan-pelanggan-input').value.toLowerCase();
+    const input = document.getElementById('pesanan-pelanggan-input');
+    const keyword = input.value.toLowerCase().trim();
     const listDiv = document.getElementById('pelanggan-dropdown-list');
+    const idInput = document.getElementById('pesanan-pelanggan-id');
     listDiv.innerHTML = '';
 
-    if (!keyword) {
-        listDiv.classList.add('hidden');
-        document.getElementById('pesanan-pelanggan-id').value = '';
-        return;
+    // Bila teks input berubah dan tidak lagi sama dengan nama pelanggan yang tersimpan, kosongkan ID
+    const currentSelected = pelangganList.find(c => c.id === idInput.value);
+    if (currentSelected && currentSelected.nama.toLowerCase() !== keyword) {
+        idInput.value = '';
     }
 
-    const matched = pelangganList.filter(c => c.nama.toLowerCase().includes(keyword) || c.hp.includes(keyword));
+    // Tampilkan data yang cocok, atau bila input kosong tampilkan maksimal 10 data pertama
+    const matched = keyword
+        ? pelangganList.filter(c => c.nama.toLowerCase().includes(keyword) || c.hp.includes(keyword) || (c.alamat && c.alamat.toLowerCase().includes(keyword)))
+        : pelangganList.slice(0, 10);
 
     if (matched.length === 0) {
         listDiv.innerHTML = `<div class="p-2.5 text-xs text-gray-400">Tidak ada toko/pelanggan ditemukan</div>`;
     } else {
         matched.forEach(c => {
             const item = document.createElement('div');
-            item.className = 'p-2.5 hover:bg-emerald-50 cursor-pointer text-xs border-b border-gray-100';
+            item.className = 'p-2.5 hover:bg-emerald-50 cursor-pointer text-xs border-b border-gray-100 transition';
             item.innerHTML = `<div class="font-bold text-gray-800">${esc(c.nama)}</div><div class="text-gray-500">${esc(c.hp)} - ${esc(c.alamat || '')}</div>`;
-            item.onclick = function() {
-                document.getElementById('pesanan-pelanggan-id').value = c.id;
-                document.getElementById('pesanan-pelanggan-input').value = c.nama;
+            item.onmousedown = function(e) {
+                e.preventDefault();
+                idInput.value = c.id;
+                input.value = c.nama;
                 listDiv.classList.add('hidden');
             };
             listDiv.appendChild(item);
@@ -886,7 +924,7 @@ function addItemRow(existingData = null) {
     const qtyVal = existingData ? existingData.qty : 1;
     const existingProdId = existingData ? existingData.produkId : '';
     const existingProd = produkList.find(p => p.id === existingProdId);
-    const existingProdName = existingProd ? existingProd.nama : '';
+    const existingProdName = existingProd ? existingProd.nama : (existingData ? existingData.nama : '');
     const existingVarian = existingData ? (existingData.varianWarna || '') : '';
 
     const rowDiv = document.createElement('div');
@@ -896,7 +934,7 @@ function addItemRow(existingData = null) {
         <div class="flex items-center gap-2 relative">
             <div class="flex-grow relative">
                 <input type="hidden" class="product-id-val" value="${esc(existingProdId)}">
-                <input type="text" oninput="onProductInput('${rowId}')" placeholder="Ketik nama produk..." class="product-search-input w-full text-xs border border-gray-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary" value="${esc(existingProdName)}">
+                <input type="text" oninput="onProductInput('${rowId}')" onfocus="onProductInput('${rowId}')" autocomplete="off" placeholder="Ketik atau pilih nama produk..." class="product-search-input w-full text-xs border border-gray-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary" value="${esc(existingProdName)}">
                 <div class="product-dropdown-list absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto hidden"></div>
             </div>
             <div class="w-20">
@@ -909,7 +947,7 @@ function addItemRow(existingData = null) {
         </div>
         <div class="varian-container hidden relative">
             <label class="block text-[10px] font-semibold text-gray-500 uppercase mb-1">Varian / Kode Warna Cat Semprot</label>
-            <input type="text" oninput="onVarianInput('${rowId}')" placeholder="Ketik kode atau nama warna (misal: 139 BLACK)..." class="varian-search-input w-full text-xs border border-gray-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary" value="${esc(existingVarian)}">
+            <input type="text" oninput="onVarianInput('${rowId}')" onfocus="onVarianInput('${rowId}')" autocomplete="off" placeholder="Ketik atau pilih kode/nama warna (misal: 139 BLACK)..." class="varian-search-input w-full text-xs border border-gray-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary" value="${esc(existingVarian)}">
             <div class="varian-dropdown-list absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto hidden"></div>
         </div>
     `;
@@ -917,36 +955,42 @@ function addItemRow(existingData = null) {
 
     if (existingData && existingProd) {
         checkVarianAndSubtotal(rowId, existingProd, existingVarian);
+    } else if (existingData && !existingProd && existingData.harga) {
+        // Fallback bila produk master lama terhapus namun data item pesanan masih ada harga
+        checkVarianAndSubtotal(rowId, existingData, existingVarian);
+    } else if (!existingData) {
+        // Auto-focus input nama produk bila baris baru ditambah
+        setTimeout(() => {
+            const inp = rowDiv.querySelector('.product-search-input');
+            if (inp) inp.focus();
+        }, 50);
     }
     calculateTotalPesanan();
 }
 
 function onProductInput(rowId) {
     const row = document.getElementById(rowId);
+    if (!row) return;
     const input = row.querySelector('.product-search-input');
     const idVal = row.querySelector('.product-id-val');
     const listDiv = row.querySelector('.product-dropdown-list');
-    const keyword = input.value.toLowerCase();
+    const keyword = input.value.toLowerCase().trim();
 
     listDiv.innerHTML = '';
-    idVal.value = '';
 
-    if (!keyword) {
-        listDiv.classList.add('hidden');
-        checkVarianAndSubtotal(rowId, null);
-        return;
-    }
-
-    const matched = produkList.filter(p => p.nama.toLowerCase().includes(keyword) || p.kategori.toLowerCase().includes(keyword));
+    const matched = keyword
+        ? produkList.filter(p => p.nama.toLowerCase().includes(keyword) || (p.kategori && p.kategori.toLowerCase().includes(keyword)))
+        : produkList.slice(0, 15);
 
     if (matched.length === 0) {
         listDiv.innerHTML = `<div class="p-2 text-xs text-gray-400">Produk tidak ditemukan</div>`;
     } else {
         matched.forEach(p => {
             const item = document.createElement('div');
-            item.className = 'p-2 hover:bg-emerald-50 cursor-pointer text-xs border-b border-gray-100';
+            item.className = 'p-2 hover:bg-emerald-50 cursor-pointer text-xs border-b border-gray-100 transition';
             item.innerHTML = `<div class="font-bold text-gray-800">${esc(p.nama)}</div><div class="text-emerald-600">${formatRupiah(p.harga)} / ${esc(p.satuan)}</div>`;
-            item.onclick = function() {
+            item.onmousedown = function(e) {
+                e.preventDefault();
                 idVal.value = p.id;
                 input.value = p.nama;
                 listDiv.classList.add('hidden');
@@ -956,11 +1000,14 @@ function onProductInput(rowId) {
         });
     }
     listDiv.classList.remove('hidden');
-    checkVarianAndSubtotal(rowId, null);
+    if (!keyword) {
+        checkVarianAndSubtotal(rowId, null);
+    }
 }
 
 function checkVarianAndSubtotal(rowId, prod, selectedVarian = '') {
     const row = document.getElementById(rowId);
+    if (!row) return;
     const qtyInput = row.querySelector('.item-qty');
     const subtotalDiv = row.querySelector('.item-subtotal');
     const varianContainer = row.querySelector('.varian-container');
@@ -971,9 +1018,11 @@ function checkVarianAndSubtotal(rowId, prod, selectedVarian = '') {
         const sub = qty * prod.harga;
         subtotalDiv.innerText = formatRupiah(sub);
 
-        if (prod.nama.toLowerCase().includes('cat semprot')) {
+        const isCatSemprot = (prod.nama && prod.nama.toLowerCase().includes('cat semprot')) ||
+                             (prod.kategori && prod.kategori.toLowerCase().includes('cat semprot'));
+        if (isCatSemprot) {
             varianContainer.classList.remove('hidden');
-            varianInput.value = selectedVarian;
+            if (selectedVarian) varianInput.value = selectedVarian;
         } else {
             varianContainer.classList.add('hidden');
             varianInput.value = '';
@@ -989,27 +1038,26 @@ function checkVarianAndSubtotal(rowId, prod, selectedVarian = '') {
 // ================= AUTOCOMPLETE VARIAN WARNA =================
 function onVarianInput(rowId) {
     const row = document.getElementById(rowId);
+    if (!row) return;
     const input = row.querySelector('.varian-search-input');
     const listDiv = row.querySelector('.varian-dropdown-list');
-    const keyword = input.value.toLowerCase();
+    const keyword = input.value.toLowerCase().trim();
 
     listDiv.innerHTML = '';
 
-    if (!keyword) {
-        listDiv.classList.add('hidden');
-        return;
-    }
-
-    const matched = MAGIC_COLOR_OPTIONS.filter(col => col.toLowerCase().includes(keyword));
+    const matched = keyword
+        ? MAGIC_COLOR_OPTIONS.filter(col => col.toLowerCase().includes(keyword))
+        : MAGIC_COLOR_OPTIONS.slice(0, 15);
 
     if (matched.length === 0) {
         listDiv.innerHTML = `<div class="p-2 text-xs text-gray-400">Warna tidak ditemukan</div>`;
     } else {
         matched.forEach(col => {
             const item = document.createElement('div');
-            item.className = 'p-2 hover:bg-emerald-50 cursor-pointer text-xs border-b border-gray-100 font-medium text-gray-800';
+            item.className = 'p-2 hover:bg-emerald-50 cursor-pointer text-xs border-b border-gray-100 font-medium text-gray-800 transition';
             item.innerText = col;
-            item.onclick = function() {
+            item.onmousedown = function(e) {
+                e.preventDefault();
                 input.value = col;
                 listDiv.classList.add('hidden');
             };
@@ -1141,13 +1189,16 @@ let currentNotaNo = '';
 
 function previewWhatsapp(id) {
     const ord = pesananList.find(o => o.id === id);
+    if (!ord) return;
     const pel = pelangganList.find(c => c.id === ord.pelangganId) || { nama: 'Umum', hp: '-', alamat: '-' };
-    currentWhatsappPhone = pel.hp;
+    currentWhatsappPhone = pel.hp || '';
     currentNotaNo = ord.noNota;
 
     const dateObj = new Date(ord.tanggal);
     const formattedDate = dateObj.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
 
+    const invNota = document.getElementById('inv-no-nota');
+    if (invNota) invNota.innerText = ord.noNota;
     document.getElementById('inv-nama-toko').innerText = pel.nama;
     document.getElementById('inv-alamat-toko').innerText = pel.alamat || '-';
     document.getElementById('inv-date').innerText = formattedDate;
@@ -1156,11 +1207,13 @@ function previewWhatsapp(id) {
     itemsBody.innerHTML = '';
 
     let grandTotal = 0;
-    let textWa = `📦 *PESANAN* 📦\n`;
+    let textWa = `📦 *NOTA PESANAN* 📦\n`;
     textWa += `----------------------------------------\n`;
+    textWa += `No. Nota     : *${ord.noNota}*\n`;
+    textWa += `Tanggal      : ${formattedDate}\n`;
     textWa += `Toko/Pemesan : *${pel.nama}*\n`;
     textWa += `Alamat       : ${pel.alamat || '-'}\n`;
-    textWa += `Tanggal      : ${formattedDate}\n`;
+    textWa += `No. WhatsApp : ${pel.hp || '-'}\n`;
     textWa += `----------------------------------------\n`;
     textWa += `*DETAIL PRODUK:*\n`;
 
@@ -1209,7 +1262,7 @@ function downloadInvoiceImage() {
         backgroundColor: '#ffffff'
     }).then(canvas => {
         const imageLink = document.createElement('a');
-        imageLink.download = `Nota_Pesanan_${currentNotaNo || 'Toko'}.png`;
+        imageLink.download = `Nota_${currentNotaNo || 'Pesanan'}.png`;
         imageLink.href = canvas.toDataURL('image/png');
         imageLink.click();
     }).catch(err => {
@@ -1258,6 +1311,7 @@ function exportLaporanImageA4() {
         invoiceCard.innerHTML = `
             <div class="flex justify-between items-center border-b pb-2">
                 <div>
+                    <div class="text-[10px] font-mono text-gray-500 font-bold">${esc(ord.noNota)}</div>
                     <h3 class="font-bold text-sm text-gray-900">${esc(pel.nama)}</h3>
                     <p class="text-gray-500 text-[11px]">${esc(pel.alamat || '-')}</p>
                 </div>
@@ -1286,7 +1340,12 @@ function exportLaporanImageA4() {
     });
 
     const wrapper = document.getElementById('printable-laporan-a4-wrapper');
-    wrapper.classList.remove('-top-[9999px]');
+    wrapper.style.display = 'block';
+    wrapper.style.position = 'fixed';
+    wrapper.style.top = '0';
+    wrapper.style.left = '0';
+    wrapper.style.zIndex = '99999';
+    wrapper.style.backgroundColor = '#ffffff';
 
     const element = document.getElementById('printable-laporan-a4');
 
@@ -1295,13 +1354,13 @@ function exportLaporanImageA4() {
         backgroundColor: '#ffffff',
         useCORS: true
     }).then(canvas => {
-        wrapper.classList.add('-top-[9999px]');
+        wrapper.style.display = 'none';
         const imageLink = document.createElement('a');
         imageLink.download = `Rekap_Pesanan_A4_${getLaporanFileSuffix()}.png`;
         imageLink.href = canvas.toDataURL('image/png');
         imageLink.click();
     }).catch(err => {
-        wrapper.classList.add('-top-[9999px]');
+        wrapper.style.display = 'none';
         alert('Gagal mengunduh gambar rekap A4: ' + err.message);
     });
 }
@@ -1315,12 +1374,21 @@ function copyWhatsappText() {
 
 function sendToWhatsappFinal() {
     const text = document.getElementById('whatsapp-text-area').value;
-    let cleanPhone = currentWhatsappPhone.replace(/[^0-9]/g, '');
+    let cleanPhone = (currentWhatsappPhone || '').replace(/[^0-9]/g, '');
     if (cleanPhone.startsWith('0')) {
         cleanPhone = '62' + cleanPhone.substring(1);
     }
     const encoded = encodeURIComponent(text);
-    const waUrl = `https://wa.me/${cleanPhone}?text=${encoded}`;
+    if (!cleanPhone) {
+        const manualPhone = prompt('Nomor WhatsApp pelanggan belum terdaftar. Masukkan nomor WhatsApp (contoh: 08123456789):');
+        if (!manualPhone) {
+            window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
+            return;
+        }
+        cleanPhone = manualPhone.replace(/[^0-9]/g, '');
+        if (cleanPhone.startsWith('0')) cleanPhone = '62' + cleanPhone.substring(1);
+    }
+    const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encoded}`;
     window.open(waUrl, '_blank');
 }
 
@@ -1509,5 +1577,30 @@ function importDatabase(event) {
     };
     reader.readAsText(file);
 }
+
+// Tutup dropdown autocomplete saat pengguna mengklik di luar area input / dropdown
+document.addEventListener('click', function (e) {
+    // Dropdown Pelanggan
+    if (!e.target.closest('#pesanan-pelanggan-input') && !e.target.closest('#pelanggan-dropdown-list')) {
+        const pList = document.getElementById('pelanggan-dropdown-list');
+        if (pList) pList.classList.add('hidden');
+    }
+    // Dropdown Produk
+    document.querySelectorAll('.product-dropdown-list').forEach(list => {
+        const row = list.closest('#items-container > div');
+        const input = row ? row.querySelector('.product-search-input') : null;
+        if (input && !e.target.closest('.product-dropdown-list') && e.target !== input) {
+            list.classList.add('hidden');
+        }
+    });
+    // Dropdown Varian
+    document.querySelectorAll('.varian-dropdown-list').forEach(list => {
+        const row = list.closest('#items-container > div');
+        const input = row ? row.querySelector('.varian-search-input') : null;
+        if (input && !e.target.closest('.varian-dropdown-list') && e.target !== input) {
+            list.classList.add('hidden');
+        }
+    });
+});
 
 initAuth();

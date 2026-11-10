@@ -1,6 +1,11 @@
 @media print {
-    header, nav, footer, #login-screen, #default-pw-banner, .no-print { display: none !important; }
-    body { background: #fff !important; }
+    header, nav, footer, #login-screen, #default-pw-banner, .no-print, #printable-laporan-a4-wrapper, .theme-toggle, button { display: none !important; }
+    body { background: #fff !important; color: #111827 !important; font-size: 11pt !important; }
+    main { max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
+    table { width: 100% !important; border-collapse: collapse !important; }
+    th, td { border: 1px solid #d1d5db !important; padding: 6px 8px !important; }
+    th { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .shadow-sm, .shadow-md, .shadow-xl, .shadow-2xl { box-shadow: none !important; border: 1px solid #e5e7eb !important; }
 }
 
 /* ===================================================================
