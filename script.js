@@ -66,6 +66,10 @@ try {
 const EMAIL_DOMAIN = 'po-salesman.app';
 const usernameToEmail = (u) => `${String(u).trim().toLowerCase()}@${EMAIL_DOMAIN}`;
 
+// Bila kolom 'catatan' belum ada di database, pesanan tanpa catatan tetap bisa disimpan.
+let catatanSupported = true;
+const MSG_CATATAN = 'Kolom "catatan" belum ada di database. Jalankan SQL di supabase/migrasi_catatan.sql pada Supabase SQL Editor, lalu coba lagi.';
+
 const TABLE_MAP = {
     produk: {
         orderBy: 'created_at',
@@ -81,15 +85,17 @@ const TABLE_MAP = {
         orderBy: 'tanggal',
         to: (o) => {
             const d = new Date(o.tanggal);
-            return {
+            const row = {
                 id: o.id,
                 no_nota: o.noNota,
                 tanggal: isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString(),
                 pelanggan_id: o.pelangganId || null,
                 items: o.items || []
             };
+            if (catatanSupported || o.catatan) row.catatan = o.catatan || '';
+            return row;
         },
-        from: (r) => ({ id: r.id, noNota: r.no_nota, tanggal: r.tanggal, pelangganId: r.pelanggan_id, items: r.items || [] })
+        from: (r) => ({ id: r.id, noNota: r.no_nota, tanggal: r.tanggal, pelangganId: r.pelanggan_id, items: r.items || [], catatan: r.catatan || '' })
     }
 };
 
@@ -110,19 +116,26 @@ async function dbFetchAll(table) {
         out.push(...data);
         if (data.length < size) break;
     }
+    if (table === 'pesanan' && out.length) catatanSupported = ('catatan' in out[0]);
     return out.map(cfg.from);
 }
 
 async function dbUpsert(table, obj) {
     const { error } = await sb.from(table).upsert(TABLE_MAP[table].to(obj));
-    if (error) throw error;
+    if (error) {
+        if (/catatan/i.test(error.message || '')) error.message = MSG_CATATAN;
+        throw error;
+    }
 }
 
 async function dbUpsertMany(table, list) {
     const rows = list.map(TABLE_MAP[table].to);
     for (let i = 0; i < rows.length; i += 500) {
         const { error } = await sb.from(table).upsert(rows.slice(i, i + 500));
-        if (error) throw error;
+        if (error) {
+            if (/catatan/i.test(error.message || '')) error.message = MSG_CATATAN;
+            throw error;
+        }
     }
 }
 
@@ -825,7 +838,7 @@ function renderPesanan() {
             <tr class="hover:bg-gray-50 transition">
                 <td data-label="No. Nota" class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}</td>
                 <td data-label="Waktu" class="py-3 px-4 text-gray-600 text-xs">${formattedDate}</td>
-                <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}</td>
+                <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}${ord.catatan ? `<div class="text-[11px] font-normal text-amber-600 mt-0.5 max-w-xs sm:truncate" title="${esc(ord.catatan)}">📝 ${esc(ord.catatan)}</div>` : ''}</td>
                 <td data-label="Total Item" class="py-3 px-4 text-gray-600">${totalQty} item</td>
                 <td data-label="Total" class="py-3 px-4 font-bold text-emerald-600">${formatRupiah(totalHarga)}</td>
                 <td data-label="Aksi" class="py-3 px-4 text-center space-x-1">
@@ -864,15 +877,24 @@ function openModalPesanan(id = null) {
         const container = document.getElementById('items-container');
         container.innerHTML = '';
         ord.items.forEach(item => addItemRow(item));
+        document.getElementById('pesanan-catatan').value = ord.catatan || '';
     } else {
         document.getElementById('modal-pesanan-title').innerText = 'Buat Pesanan Baru';
         document.getElementById('pesanan-id').value = '';
         document.getElementById('pesanan-pelanggan-id').value = '';
         document.getElementById('pesanan-pelanggan-input').value = '';
         document.getElementById('items-container').innerHTML = '';
+        document.getElementById('pesanan-catatan').value = '';
         addItemRow();
     }
+    updateCatatanCount();
     calculateTotalPesanan();
+}
+
+function updateCatatanCount() {
+    const el = document.getElementById('pesanan-catatan');
+    const out = document.getElementById('pesanan-catatan-count');
+    if (el && out) out.innerText = el.value.length;
 }
 
 function closeModalPesanan() {
@@ -1096,6 +1118,7 @@ async function savePesanan() {
     if (!requirePerm('pesanan.write')) return;
     const id = document.getElementById('pesanan-id').value;
     const pelangganId = document.getElementById('pesanan-pelanggan-id').value;
+    const catatan = document.getElementById('pesanan-catatan').value.trim();
 
     const rows = document.querySelectorAll('#items-container > div');
     let items = [];
@@ -1132,7 +1155,7 @@ async function savePesanan() {
         if (id) {
             const existing = pesananList.find(o => o.id === id);
             if (!existing) { alert('Pesanan tidak ditemukan. Muat ulang halaman lalu coba lagi.'); return; }
-            const updated = { ...existing, pelangganId, items };
+            const updated = { ...existing, pelangganId, items, catatan };
             await dbUpsert('pesanan', updated);
             Object.assign(existing, updated);
         } else {
@@ -1144,7 +1167,8 @@ async function savePesanan() {
                     noNota: generateNoNota(),
                     tanggal: new Date().toISOString(),
                     pelangganId: pelangganId,
-                    items: items
+                    items: items,
+                    catatan: catatan
                 };
                 try {
                     await dbUpsert('pesanan', cand);
@@ -1243,6 +1267,16 @@ function previewWhatsapp(id) {
 
     document.getElementById('inv-total').innerText = formatRupiah(grandTotal);
 
+    const catWrap = document.getElementById('inv-catatan-wrap');
+    if (catWrap) {
+        catWrap.classList.toggle('hidden', !ord.catatan);
+        document.getElementById('inv-catatan').innerText = ord.catatan || '';
+    }
+    if (ord.catatan) {
+        textWa += `----------------------------------------\n`;
+        textWa += `📝 *Catatan:*\n${ord.catatan}\n`;
+    }
+
     textWa += `----------------------------------------\n`;
     textWa += `*TOTAL KESELURUHAN: ${formatRupiah(grandTotal)}*\n`;
     textWa += `----------------------------------------`;
@@ -1332,6 +1366,7 @@ function exportLaporanImageA4() {
                     ${itemsHtml}
                 </tbody>
             </table>
+            ${ord.catatan ? `<div class="border-t pt-2 text-[11px] text-gray-700"><span class="font-semibold text-gray-500">Catatan:</span> <span style="white-space:pre-line">${esc(ord.catatan)}</span></div>` : ''}
             <div class="border-t pt-2 flex justify-between items-center font-bold text-xs text-gray-900">
                 <span>TOTAL KESELURUHAN:</span>
                 <span class="text-emerald-600 text-sm">${formatRupiah(grandTotal)}</span>
@@ -1468,7 +1503,7 @@ function renderLaporan() {
             totalItem += itemSumQty;
             totalOmzet += itemSumHarga;
 
-            const itemsDesc = ord.items.map(i => `${i.qty}x ${i.nama}${i.varianWarna ? ' (' + i.varianWarna + ')' : ''}`).join(', ');
+            const itemsDesc = ord.items.map(i => `${i.qty}x ${i.nama}${i.varianWarna ? ' (' + i.varianWarna + ')' : ''}`).join(', ') + (ord.catatan ? ' — 📝 ' + ord.catatan : '');
             const waktu = new Date(ord.tanggal).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
 
             return `
@@ -1511,7 +1546,8 @@ function exportExcelLaporan() {
                 'Qty': item.qty,
                 'Satuan': item.satuan || 'Pcs',
                 'Harga Satuan': item.harga,
-                'Subtotal': item.qty * item.harga
+                'Subtotal': item.qty * item.harga,
+                'Catatan Pesanan': ord.catatan || ''
             });
         });
     });
@@ -1605,3 +1641,8 @@ document.addEventListener('click', function (e) {
 });
 
 initAuth();
+
+// Penghitung karakter catatan pesanan
+document.addEventListener('input', function (e) {
+    if (e.target && e.target.id === 'pesanan-catatan') updateCatatanCount();
+});
