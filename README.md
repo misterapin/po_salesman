@@ -1,47 +1,78 @@
 # PO SALESMAN - Online (Vercel + Supabase)
 
-Struktur:
 ```
-index.html  script.js  style.css  config.js
-api/users.js            <- fungsi server Vercel (kelola akun pengguna)
-supabase/schema.sql     <- tabel + keamanan (RLS)
-supabase/seed.sql       <- (opsional) 86 produk & 3 pelanggan contoh
+index.html  script.js  style.css  config.js   <- aplikasi (front-end)
+api/users.js     <- fungsi server: tambah/ubah/hapus akun (hanya Admin)
+api/health.js    <- cek konfigurasi: buka /api/health
+api/_env.js      <- pembaca environment variable
+supabase/schema.sql, seed.sql
+vercel.json      <- header keamanan
 ```
 
-## 1. Supabase
-1. Buat proyek di https://supabase.com (pilih region Singapore).
-2. **SQL Editor** -> jalankan isi `supabase/schema.sql`, lalu (opsional) `supabase/seed.sql`.
-3. **Authentication > Users > Add user > Create new user**
-   - Email: `admin@po-salesman.app`, isi password, centang **Auto Confirm User**.
-4. Kembali ke **SQL Editor**, jalankan:
+## A. Supabase (sekali saja)
+1. SQL Editor -> jalankan `supabase/schema.sql` (lalu `seed.sql` bila mau data contoh).
+2. Authentication > Users > Add user > Create new user:
+   email `admin@po-salesman.app`, isi password, centang **Auto Confirm User**.
+3. SQL Editor -> jalankan:
    ```sql
    insert into public.profiles (id, username, nama, role, default_pw)
    select id, 'admin', 'Administrator', 'admin', false
    from auth.users where email = 'admin@po-salesman.app';
    ```
-5. **Authentication > Sign In / Providers**: matikan **Allow new users to sign up** (wajib, agar orang luar tidak bisa daftar sendiri).
-6. **Project Settings > API**: catat `Project URL`, `anon/publishable key`, dan `service_role/secret key`.
+4. Authentication > Sign In / Providers: matikan **Allow new users to sign up**.
+5. Project Settings > API Keys: siapkan **Project URL**, **Publishable key**, dan **Secret key**
+   (bila tampil tab "Legacy": anon key dan service_role key).
 
-## 2. Isi konfigurasi
-Edit `config.js`: isi `SUPABASE_URL` dan `SUPABASE_ANON_KEY` (kunci anon boleh publik).
+## B. Isi config.js
+`SUPABASE_URL` dan `SUPABASE_ANON_KEY` (publishable/anon key, aman publik).
+Secret / service_role key JANGAN ditaruh di sini.
 
-## 3. Vercel
-1. Upload folder ini ke GitHub (atau pakai `npx vercel` dari folder ini).
-2. Import repo di https://vercel.com (Framework Preset: **Other**, tanpa build command).
-3. **Settings > Environment Variables**, tambahkan:
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`  (RAHASIA - jangan masuk ke config.js / GitHub)
-4. Deploy (atau Redeploy bila variabel ditambah setelahnya).
+## C. Deploy ke Vercel
+**Lewat GitHub (disarankan)**
+1. Buat repo GitHub, upload SEMUA isi folder ini. `index.html` harus di root repo,
+   dan folder `api/` harus bernama persis `api` (huruf kecil).
+2. https://vercel.com > Add New > Project > Import repo tersebut.
+3. Framework Preset: **Other**. Build Command, Output Directory, Install Command: kosongkan.
+4. Buka **Environment Variables** (di halaman import atau Settings > Environment Variables), tambahkan:
 
-## 4. Pindahkan data lama
-Di aplikasi versi lama (browser lama): klik **Backup** -> unduh JSON.
-Di aplikasi online (login Admin): klik **Restore** -> pilih file JSON tadi.
-Restore bersifat menambah/menimpa berdasarkan ID, tidak menghapus data yang sudah ada.
+   | Name | Value |
+   |---|---|
+   | `SUPABASE_URL` | Project URL, mis. `https://abcd.supabase.co` |
+   | `SUPABASE_ANON_KEY` | Publishable / anon key |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Secret / service_role key (RAHASIA) |
 
-## Catatan
-- Login memakai username; di Supabase tersimpan sebagai email `username@po-salesman.app`.
-- Akun baru (kasir dll.) dibuat dari menu **Pengguna** di aplikasi (butuh `SUPABASE_SERVICE_ROLE_KEY`).
-- Hak akses ditegakkan di database (RLS), bukan hanya di tampilan: Kasir tidak bisa ubah produk/hapus data walau lewat console browser.
-- Mengganti password akun admin bawaan: menu di aplikasi (**Ganti Password**).
-- Free plan Supabase menjeda proyek yang tidak aktif ~1 minggu; buka aplikasi berkala atau upgrade.
+   Centang **Production** (dan Preview bila perlu). Tempel nilainya TANPA tanda kutip.
+5. Klik **Deploy**.
+6. Setiap kali menambah/mengubah variabel SETELAH deploy: tab **Deployments** > titik tiga (...)
+   pada deployment terbaru > **Redeploy**. Variabel hanya terbaca oleh deployment baru.
+
+**Lewat CLI (alternatif)**
+```
+npm i -g vercel
+vercel login
+vercel                # deploy preview
+vercel env add SUPABASE_URL production
+vercel env add SUPABASE_ANON_KEY production
+vercel env add SUPABASE_SERVICE_ROLE_KEY production
+vercel --prod
+```
+
+## D. Verifikasi
+1. Buka `https://DOMAIN-ANDA/api/health` -> harus tampil `"ok": true` dan ketiganya `true`.
+   Bila ada yang `false`, nama variabel tertera di `missing`.
+2. Login `admin` + password yang Anda buat di langkah A.2.
+3. Menu **Pengguna** > Tambah Pengguna > buat akun Kasir, lalu coba login sebagai kasir.
+
+## E. Pemecahan masalah
+| Gejala | Penyebab / solusi |
+|---|---|
+| "Environment variable belum terbaca ..." | Variabel belum ada / salah nama / belum Redeploy. Cek `/api/health`. |
+| "Endpoint /api/users tidak ditemukan (404)" | Folder `api/` tidak ikut ter-upload atau salah nama. |
+| "Username atau password salah" | Admin belum dibuat lewat A.2-A.3, atau password salah. |
+| "Akun ini belum memiliki profil" | Jalankan SQL A.3 (insert ke `profiles`). |
+| Data tidak muncul setelah login | `schema.sql` belum dijalankan, atau profil belum dibuat. |
+| Proyek Supabase "paused" | Free plan dijeda bila tidak aktif ~1 minggu; klik Restore di dashboard. |
+
+## F. Pindahkan data lama
+Aplikasi lama: **Backup** (unduh JSON). Aplikasi online (Admin): **Restore** (pilih file tadi).
+Restore menambah/menimpa berdasarkan ID dan tidak menghapus data lain.

@@ -1,17 +1,22 @@
 // Vercel Serverless Function: kelola akun pengguna (hanya Admin).
 // Butuh Environment Variables di Vercel:
 //   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+// (alias yang juga diterima: lihat api/_env.js)
 // SUPABASE_SERVICE_ROLE_KEY bersifat RAHASIA, jangan dimasukkan ke kode front-end.
 
 const EMAIL_DOMAIN = 'po-salesman.app';
 const toEmail = (u) => `${String(u).trim().toLowerCase()}@${EMAIL_DOMAIN}`;
 
+const { readEnv, missingNames } = require('./_env');
+
 function env() {
-    const { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY } = process.env;
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
-        throw new HttpError(500, 'Environment variable Supabase belum lengkap di Vercel.');
+    const cfg = readEnv();
+    const missing = missingNames(cfg);
+    if (missing.length) {
+        throw new HttpError(500, 'Environment variable belum terbaca di Vercel: ' + missing.join(', ') +
+            '. Tambahkan di Settings > Environment Variables (centang Production), lalu Redeploy.');
     }
-    return { url: SUPABASE_URL.replace(/\/$/, ''), anon: SUPABASE_ANON_KEY, service: SUPABASE_SERVICE_ROLE_KEY };
+    return cfg;
 }
 
 class HttpError extends Error {
@@ -19,12 +24,11 @@ class HttpError extends Error {
 }
 
 function serviceHeaders(key, extra = {}) {
-    return {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        ...extra
-    };
+    const h = { apikey: key, 'Content-Type': 'application/json', ...extra };
+    // Kunci lama (JWT, awalan "eyJ") juga dikirim sebagai Bearer.
+    // Kunci baru (sb_secret_...) cukup lewat header apikey.
+    if (key.startsWith('eyJ')) h.Authorization = `Bearer ${key}`;
+    return h;
 }
 
 async function sbFetch(url, options) {
