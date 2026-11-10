@@ -2,7 +2,8 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#10B981">
     <title>PO SALESMAN</title>
     <!-- Terapkan tema tersimpan (atau ikuti sistem) sebelum render agar tidak berkedip -->
     <script>
@@ -41,11 +42,11 @@
 <body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
 
     <!-- ================= LAYAR LOGIN ================= -->
-    <div id="login-screen" class="fixed inset-0 z-[100] bg-gradient-to-br from-emerald-50 to-gray-100 flex items-center justify-center p-4 overflow-y-auto">
+    <div id="login-screen" class="fixed inset-0 z-[100] bg-gradient-to-br from-emerald-50 to-gray-100 flex items-start justify-center p-4 overflow-y-auto">
         <button type="button" onclick="toggleTheme()" class="theme-toggle absolute top-4 right-4 bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 w-10 h-10 rounded-full shadow-sm transition flex items-center justify-center" title="Ganti tema" aria-label="Ganti tema terang/gelap">
             <i class="fa-solid fa-moon"></i>
         </button>
-        <div class="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+        <div class="w-full max-w-sm my-auto bg-white rounded-2xl shadow-xl border border-gray-100 p-6 sm:p-8">
             <div class="text-center mb-6">
                 <div class="inline-flex bg-primary text-white p-3.5 rounded-2xl shadow-md mb-3">
                     <i class="fa-solid fa-store text-2xl"></i>
@@ -84,45 +85,45 @@
     <div id="app-shell" class="hidden flex flex-col flex-grow">
 
     <!-- Top Navbar -->
-    <header class="bg-white shadow-sm sticky top-0 z-30">
-        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+    <header class="bg-white shadow-sm sm:sticky sm:top-0 z-30">
+        <div class="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex flex-wrap justify-between items-center gap-x-4 gap-y-2">
             <div class="flex items-center space-x-3">
-                <div class="bg-primary text-white p-2.5 rounded-xl shadow-md">
-                    <i class="fa-solid fa-store text-xl"></i>
+                <div class="bg-primary text-white p-2 sm:p-2.5 rounded-xl shadow-md">
+                    <i class="fa-solid fa-store text-lg sm:text-xl"></i>
                 </div>
                 <div>
-                    <h1 class="text-lg font-bold text-gray-900 leading-tight">PO SALESMAN</h1>
+                    <h1 class="text-base sm:text-lg font-bold text-gray-900 leading-tight">PO SALESMAN</h1>
                 </div>
             </div>
 
-            <!-- Realtime Clock, Backup & User -->
-            <div class="flex flex-wrap items-center gap-3">
+            <!-- Jam, Backup, Tema & Pengguna (di HP: baris kedua, tombol hanya ikon) -->
+            <div class="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
                 <div class="hidden sm:flex items-center bg-gray-100 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-700">
                     <i class="fa-regular fa-clock text-primary mr-2"></i>
                     <span id="realtime-clock">Memuat waktu...</span>
                 </div>
-                <div class="flex space-x-2">
-                    <button data-perm="backup" onclick="exportDatabase()" title="Backup Database JSON" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center">
-                        <i class="fa-solid fa-download mr-1.5"></i> Backup
+                <div class="flex gap-2">
+                    <button data-perm="backup" onclick="exportDatabase()" title="Backup Database JSON" aria-label="Backup" class="bg-gray-100 hover:bg-gray-200 text-gray-700 w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-1.5 rounded-lg text-sm font-medium transition flex items-center justify-center">
+                        <i class="fa-solid fa-download sm:mr-1.5"></i><span class="hidden sm:inline">Backup</span>
                     </button>
-                    <label data-perm="backup" title="Restore Database JSON" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-medium transition cursor-pointer flex items-center">
-                        <i class="fa-solid fa-upload mr-1.5"></i> Restore
+                    <label data-perm="backup" title="Restore Database JSON" aria-label="Restore" class="bg-gray-100 hover:bg-gray-200 text-gray-700 w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-1.5 rounded-lg text-sm font-medium transition cursor-pointer flex items-center justify-center">
+                        <i class="fa-solid fa-upload sm:mr-1.5"></i><span class="hidden sm:inline">Restore</span>
                         <input type="file" id="import-file" accept=".json" onchange="importDatabase(event)" class="hidden">
                     </label>
                 </div>
                 <button type="button" onclick="toggleTheme()" class="theme-toggle bg-gray-100 hover:bg-gray-200 text-gray-700 w-9 h-9 rounded-lg transition flex items-center justify-center" title="Ganti tema" aria-label="Ganti tema terang/gelap">
                     <i class="fa-solid fa-moon"></i>
                 </button>
-                <div class="flex items-center space-x-2 sm:pl-3 sm:border-l sm:border-gray-200">
-                    <div class="text-right leading-tight">
-                        <p id="user-nama" class="text-sm font-semibold text-gray-800"></p>
+                <div class="flex items-center gap-2 ml-auto sm:ml-0 sm:pl-3 sm:border-l sm:border-gray-200 min-w-0">
+                    <div class="text-right leading-tight hidden min-[400px]:block min-w-0">
+                        <p id="user-nama" class="text-sm font-semibold text-gray-800 max-w-[110px] sm:max-w-none truncate"></p>
                         <span id="user-role" class="inline-block text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-600"></span>
                     </div>
-                    <button onclick="openModalPassword()" title="Ganti Password" class="bg-gray-100 hover:bg-gray-200 text-gray-700 w-9 h-9 rounded-lg transition flex items-center justify-center">
+                    <button onclick="openModalPassword()" title="Ganti Password" aria-label="Ganti Password" class="bg-gray-100 hover:bg-gray-200 text-gray-700 w-9 h-9 rounded-lg transition flex items-center justify-center flex-shrink-0">
                         <i class="fa-solid fa-key"></i>
                     </button>
-                    <button onclick="logout()" title="Keluar" class="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center">
-                        <i class="fa-solid fa-right-from-bracket mr-1.5"></i> Keluar
+                    <button onclick="logout()" title="Keluar" aria-label="Keluar" class="bg-red-50 hover:bg-red-100 text-red-600 w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-1.5 rounded-lg text-sm font-medium transition flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-right-from-bracket sm:mr-1.5"></i><span class="hidden sm:inline">Keluar</span>
                     </button>
                 </div>
             </div>
@@ -130,7 +131,7 @@
     </header>
 
     <!-- Navigation Tabs -->
-    <nav class="bg-white border-b border-gray-200 shadow-sm">
+    <nav id="main-nav" class="bg-white border-b border-gray-200 shadow-sm">
         <div class="max-w-7xl mx-auto px-4 flex space-x-2 overflow-x-auto">
             <button onclick="switchTab('pesanan')" id="tab-pesanan" class="tab-btn py-3 px-4 font-semibold text-sm border-b-2 border-primary text-primary flex items-center whitespace-nowrap transition">
                 <i class="fa-solid fa-cart-shopping mr-2"></i> Pesanan
@@ -150,7 +151,7 @@
         </div>
     </nav>
 
-    <div id="default-pw-banner" class="hidden max-w-7xl mx-auto px-4 pt-4 w-full">
+    <div id="default-pw-banner" class="hidden max-w-7xl mx-auto px-3 sm:px-4 pt-4 w-full">
         <div class="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-2">
             <span><i class="fa-solid fa-triangle-exclamation mr-2"></i>Akun ini masih memakai password bawaan. Segera ganti demi keamanan.</span>
             <button onclick="openModalPassword()" class="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-lg text-xs font-semibold">Ganti Password</button>
@@ -158,7 +159,7 @@
     </div>
 
     <!-- Main Container -->
-    <main class="max-w-7xl mx-auto px-4 py-6 flex-grow w-full">
+    <main class="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6 flex-grow w-full">
 
         <!-- ================= SECTION: PESANAN ================= -->
         <section id="section-pesanan" class="tab-content space-y-6">
@@ -180,17 +181,17 @@
                     </span>
                     <input type="text" id="search-pesanan" oninput="renderPesanan()" placeholder="Cari nama pelanggan / no nota..." class="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
                 </div>
-                <div class="flex items-center space-x-3 w-full sm:w-auto">
-                    <label class="text-sm text-gray-600">Filter Tanggal:</label>
-                    <input type="date" id="filter-tanggal" onchange="renderPesanan()" class="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
-                    <button onclick="resetFilterPesanan()" class="text-sm text-gray-500 hover:text-gray-700 underline">Reset</button>
+                <div class="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                    <label class="text-sm text-gray-600 whitespace-nowrap">Filter Tanggal:</label>
+                    <input type="date" id="filter-tanggal" onchange="renderPesanan()" class="flex-1 min-w-0 sm:flex-none text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
+                    <button onclick="resetFilterPesanan()" class="text-sm text-gray-500 hover:text-gray-700 underline px-2 py-2">Reset</button>
                 </div>
             </div>
 
             <!-- Table Pesanan -->
             <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
+                    <table class="responsive-table w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-600 uppercase tracking-wider">
                                 <th class="py-3 px-4">No. Nota</th>
@@ -233,7 +234,7 @@
 
             <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
+                    <table class="responsive-table w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-600 uppercase tracking-wider">
                                 <th class="py-3 px-4">No</th>
@@ -275,7 +276,7 @@
 
             <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
+                    <table class="responsive-table w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-600 uppercase tracking-wider">
                                 <th class="py-3 px-4">No</th>
@@ -302,28 +303,28 @@
 
             <!-- Filter Laporan -->
             <div class="no-print bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-end justify-between">
-                <div class="flex flex-wrap items-end gap-3">
-                    <div>
+                <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-3 w-full lg:w-auto">
+                    <div class="min-w-0">
                         <label for="laporan-dari" class="block text-xs font-medium text-gray-600 mb-1">Dari Tanggal Pesanan</label>
-                        <input type="date" id="laporan-dari" onchange="renderLaporan()" class="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
+                        <input type="date" id="laporan-dari" onchange="renderLaporan()" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
                     </div>
-                    <div>
+                    <div class="min-w-0">
                         <label for="laporan-sampai" class="block text-xs font-medium text-gray-600 mb-1">Sampai Tanggal</label>
-                        <input type="date" id="laporan-sampai" onchange="renderLaporan()" class="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
+                        <input type="date" id="laporan-sampai" onchange="renderLaporan()" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
                     </div>
-                    <div class="flex gap-2">
-                        <button onclick="setLaporanHariIni()" class="px-3 py-2 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-100 transition">Hari Ini</button>
-                        <button onclick="setLaporanSemua()" class="px-3 py-2 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-100 transition">Semua</button>
+                    <div class="flex gap-2 col-span-2 sm:col-span-1">
+                        <button onclick="setLaporanHariIni()" class="flex-1 sm:flex-none px-3 py-2 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-100 transition">Hari Ini</button>
+                        <button onclick="setLaporanSemua()" class="flex-1 sm:flex-none px-3 py-2 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-100 transition">Semua</button>
                     </div>
                 </div>
-                <div class="flex flex-wrap gap-2">
-                    <button onclick="exportLaporanImageA4()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md transition flex items-center">
+                <div class="grid grid-cols-1 sm:flex sm:flex-wrap gap-2 w-full lg:w-auto">
+                    <button onclick="exportLaporanImageA4()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md transition flex items-center justify-center">
                         <i class="fa-solid fa-images mr-2"></i> Unduh Gambar A4
                     </button>
-                    <button onclick="exportExcelLaporan()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md transition flex items-center">
+                    <button onclick="exportExcelLaporan()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md transition flex items-center justify-center">
                         <i class="fa-solid fa-file-excel mr-2"></i> Unduh Excel
                     </button>
-                    <button onclick="printLaporan()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md transition flex items-center">
+                    <button onclick="printLaporan()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md transition flex items-center justify-center">
                         <i class="fa-solid fa-print mr-2"></i> Cetak / PDF
                     </button>
                 </div>
@@ -364,7 +365,7 @@
             <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div class="p-4 border-b border-gray-200 font-bold text-gray-800">Rincian Transaksi <span id="lap-periode-label" class="font-normal text-gray-500 text-sm ml-1"></span></div>
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
+                    <table class="responsive-table w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-600 uppercase tracking-wider">
                                 <th class="py-3 px-4">No. Nota</th>
@@ -395,7 +396,7 @@
             </div>
             <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
+                    <table class="responsive-table w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-600 uppercase tracking-wider">
                                 <th class="py-3 px-4">No</th>

@@ -70,3 +70,102 @@
     html.dark .border-red-200:not(:where(#printable-invoice, #printable-invoice *, #printable-laporan-a4, #printable-laporan-a4 *)) { border-color: rgba(239,68,68,.35); }
     html.dark .border-amber-200:not(:where(#printable-invoice, #printable-invoice *, #printable-laporan-a4, #printable-laporan-a4 *)) { border-color: rgba(245,158,11,.35); }
 }
+
+/* ===================================================================
+   TAMPILAN HP  (layar < 640px)
+   - Menu tab pindah ke bawah (seperti aplikasi)
+   - Tabel berubah jadi kartu (label diambil dari atribut data-label)
+   - Jendela dialog tampil sebagai "bottom sheet"
+   - Input 16px agar iPhone tidak zoom otomatis
+   =================================================================== */
+@media screen and (max-width: 639px) {
+    html { -webkit-text-size-adjust: 100%; }
+    body { padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
+    button, a, label, select { touch-action: manipulation; }
+    input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]),
+    select, textarea { font-size: 16px !important; }
+
+    /* ---- Menu tab di bawah ---- */
+    #main-nav {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+        border-bottom-width: 0; border-top-width: 1px; border-top-style: solid;
+        box-shadow: 0 -4px 16px rgba(0, 0, 0, .08);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    #main-nav > div { padding: 0; overflow: visible; }
+    #main-nav .tab-btn {
+        flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 2px;
+        margin-left: 0 !important; padding: .5rem .15rem !important;
+        font-size: 10px; line-height: 1.15; text-align: center;
+        white-space: normal !important;
+        border-bottom-width: 0 !important; border-top-width: 3px; border-top-style: solid;
+    }
+    #main-nav .tab-btn i { margin: 0 !important; font-size: 1.15rem; }
+
+    /* ---- Tombol aksi utama (Tambah ...) selebar layar ---- */
+    section.tab-content > div:first-child > button { width: 100%; justify-content: center; padding-top: .7rem; padding-bottom: .7rem; }
+
+    /* ---- Tabel -> kartu ---- */
+    .responsive-table, .responsive-table tbody { display: block; width: 100%; }
+    .responsive-table thead { display: none; }
+    .responsive-table tr { display: block; padding: .8rem 1rem; }
+    .responsive-table td {
+        display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+        width: 100%; padding: .3rem 0 !important; text-align: right !important;
+        white-space: normal !important; max-width: none !important;
+        overflow: visible !important; text-overflow: clip !important;
+        overflow-wrap: anywhere;
+    }
+    .responsive-table td::before {
+        content: attr(data-label); flex: 0 0 auto; max-width: 38%; text-align: left;
+        font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+        color: #6b7280; padding-top: .18rem;
+    }
+    .responsive-table td[data-label="No"] { display: none; }
+    .responsive-table td:not([data-label]) { display: block; text-align: center !important; }
+    .responsive-table td:not([data-label])::before { content: none; }
+    .responsive-table td[data-label="Aksi"] {
+        justify-content: flex-end; gap: .5rem; margin-top: .4rem; padding-top: .65rem !important;
+        border-top-width: 1px; border-top-style: dashed; border-top-color: #e5e7eb;
+    }
+    .responsive-table td[data-label="Aksi"]::before { display: none; }
+    .responsive-table td[data-label="Aksi"] > * { margin-left: 0 !important; }
+    .responsive-table td[data-label="Aksi"] button {
+        min-width: 2.6rem; min-height: 2.6rem; border: 1px solid #e5e7eb; border-radius: .65rem;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+
+    /* ---- Dialog sebagai bottom sheet ---- */
+    [id^="modal-"].fixed { align-items: flex-end !important; padding: 0 !important; }
+    [id^="modal-"].fixed > div {
+        max-width: 100% !important; width: 100%;
+        max-height: 92vh; max-height: 92dvh; overflow-y: auto;
+        border-bottom-left-radius: 0 !important; border-bottom-right-radius: 0 !important;
+    }
+    [id^="modal-"].fixed > div > div:first-child { padding: .85rem 1rem !important; }
+    [id^="modal-"].fixed > div > div:nth-child(2) { padding: 1rem !important; }
+    [id^="modal-"].fixed > div > div:last-child { padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom, 0px)) !important; }
+    #modal-pesanan > div > div:last-child,
+    #modal-produk > div > div:last-child,
+    #modal-pelanggan > div > div:last-child,
+    #modal-pengguna > div > div:last-child,
+    #modal-password > div > div:last-child { gap: .5rem; }
+    #modal-pesanan > div > div:last-child > button,
+    #modal-produk > div > div:last-child > button,
+    #modal-pelanggan > div > div:last-child > button,
+    #modal-pengguna > div > div:last-child > button,
+    #modal-password > div > div:last-child > button {
+        flex: 1; margin-left: 0 !important; padding-top: .7rem; padding-bottom: .7rem;
+    }
+    #modal-whatsapp > div > div:last-child { flex-direction: column; align-items: stretch !important; }
+    #modal-whatsapp > div > div:last-child > button { justify-content: center; padding-top: .7rem; padding-bottom: .7rem; }
+    #modal-whatsapp > div > div:last-child > div { display: flex; gap: .5rem; width: 100%; margin: 0 !important; }
+    #modal-whatsapp > div > div:last-child > div > button { flex: 1; justify-content: center; margin-left: 0 !important; padding-top: .7rem; padding-bottom: .7rem; }
+}
+
+/* Warna tambahan kartu tabel pada mode gelap */
+@media screen and (max-width: 639px) {
+    html.dark .responsive-table td::before { color: #94a3b8; }
+    html.dark .responsive-table td[data-label="Aksi"] { border-top-color: #334155; }
+    html.dark .responsive-table td[data-label="Aksi"] button { border-color: #334155; }
+}

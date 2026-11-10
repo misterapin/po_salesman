@@ -429,11 +429,11 @@ function renderPengguna() {
         const badge = u.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700';
         return `
             <tr class="hover:bg-gray-50 transition">
-                <td class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
-                <td class="py-3 px-4 font-mono font-semibold text-gray-800">${esc(u.username)}${self ? ' <span class="text-[10px] text-gray-400 font-sans">(Anda)</span>' : ''}</td>
-                <td class="py-3 px-4 text-gray-700">${esc(u.nama)}</td>
-                <td class="py-3 px-4"><span class="${badge} px-2.5 py-1 rounded-md text-xs font-bold uppercase">${esc(ROLE_LABEL[u.role] || u.role)}</span></td>
-                <td class="py-3 px-4 text-center space-x-2">
+                <td data-label="No" class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
+                <td data-label="Username" class="py-3 px-4 font-mono font-semibold text-gray-800">${esc(u.username)}${self ? ' <span class="text-[10px] text-gray-400 font-sans">(Anda)</span>' : ''}</td>
+                <td data-label="Nama" class="py-3 px-4 text-gray-700">${esc(u.nama)}</td>
+                <td data-label="Role" class="py-3 px-4"><span class="${badge} px-2.5 py-1 rounded-md text-xs font-bold uppercase">${esc(ROLE_LABEL[u.role] || u.role)}</span></td>
+                <td data-label="Aksi" class="py-3 px-4 text-center space-x-2">
                     <button onclick="openModalPengguna('${u.id}')" class="text-blue-600 hover:text-blue-800 p-1" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
                     ${self ? '' : `<button onclick="deletePengguna('${u.id}')" class="text-red-600 hover:text-red-800 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>`}
                 </td>
@@ -561,6 +561,7 @@ function switchTab(tabId) {
     });
 
     document.getElementById(`section-${tabId}`).classList.remove('hidden');
+    window.scrollTo({ top: 0 });
     const activeBtn = document.getElementById(`tab-${tabId}`);
     activeBtn.classList.add('border-primary', 'text-primary');
     activeBtn.classList.remove('border-transparent', 'text-gray-500');
@@ -599,12 +600,12 @@ function renderProduk() {
     filtered.forEach((p, idx) => {
         tbody.innerHTML += `
             <tr class="hover:bg-gray-50 transition">
-                <td class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
-                <td class="py-3 px-4 font-semibold text-gray-800">${esc(p.nama)}</td>
-                <td class="py-3 px-4"><span class="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-md text-xs font-medium">${esc(p.kategori || '-')}</span></td>
-                <td class="py-3 px-4 text-gray-600">${esc(p.satuan)}</td>
-                <td class="py-3 px-4 font-bold text-emerald-600">${formatRupiah(p.harga)}</td>
-                ${can('produk.write') ? `<td class="py-3 px-4 text-center space-x-2">
+                <td data-label="No" class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
+                <td data-label="Produk" class="py-3 px-4 font-semibold text-gray-800">${esc(p.nama)}</td>
+                <td data-label="Kategori" class="py-3 px-4"><span class="bg-gray-100 text-gray-700 px-2.5 py-1 rounded-md text-xs font-medium">${esc(p.kategori || '-')}</span></td>
+                <td data-label="Satuan" class="py-3 px-4 text-gray-600">${esc(p.satuan)}</td>
+                <td data-label="Harga" class="py-3 px-4 font-bold text-emerald-600">${formatRupiah(p.harga)}</td>
+                ${can('produk.write') ? `<td data-label="Aksi" class="py-3 px-4 text-center space-x-2">
                     <button onclick="editProduk('${p.id}')" class="text-blue-600 hover:text-blue-800 p-1" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
                     <button onclick="deleteProduk('${p.id}')" class="text-red-600 hover:text-red-800 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>
                 </td>` : ''}
@@ -705,11 +706,11 @@ function renderPelanggan() {
     filtered.forEach((c, idx) => {
         tbody.innerHTML += `
             <tr class="hover:bg-gray-50 transition">
-                <td class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
-                <td class="py-3 px-4 font-semibold text-gray-800">${esc(c.nama)}</td>
-                <td class="py-3 px-4 text-emerald-600 font-medium"><i class="fa-brands fa-whatsapp mr-1"></i> ${esc(c.hp)}</td>
-                <td class="py-3 px-4 text-gray-600">${esc(c.alamat || '-')}</td>
-                <td class="py-3 px-4 text-center space-x-2">
+                <td data-label="No" class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
+                <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(c.nama)}</td>
+                <td data-label="WhatsApp" class="py-3 px-4 text-emerald-600 font-medium"><i class="fa-brands fa-whatsapp mr-1"></i> ${esc(c.hp)}</td>
+                <td data-label="Alamat" class="py-3 px-4 text-gray-600">${esc(c.alamat || '-')}</td>
+                <td data-label="Aksi" class="py-3 px-4 text-center space-x-2">
                     ${can('pelanggan.write') ? `<button onclick="editPelanggan('${c.id}')" class="text-blue-600 hover:text-blue-800 p-1" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
                     ${can('pelanggan.delete') ? `<button onclick="deletePelanggan('${c.id}')" class="text-red-600 hover:text-red-800 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
@@ -822,12 +823,12 @@ function renderPesanan() {
 
         tbody.innerHTML += `
             <tr class="hover:bg-gray-50 transition">
-                <td class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}</td>
-                <td class="py-3 px-4 text-gray-600 text-xs">${formattedDate}</td>
-                <td class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}</td>
-                <td class="py-3 px-4 text-gray-600">${totalQty} item</td>
-                <td class="py-3 px-4 font-bold text-emerald-600">${formatRupiah(totalHarga)}</td>
-                <td class="py-3 px-4 text-center space-x-1">
+                <td data-label="No. Nota" class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}</td>
+                <td data-label="Waktu" class="py-3 px-4 text-gray-600 text-xs">${formattedDate}</td>
+                <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}</td>
+                <td data-label="Total Item" class="py-3 px-4 text-gray-600">${totalQty} item</td>
+                <td data-label="Total" class="py-3 px-4 font-bold text-emerald-600">${formatRupiah(totalHarga)}</td>
+                <td data-label="Aksi" class="py-3 px-4 text-center space-x-1">
                     <button onclick="previewWhatsapp('${ord.id}')" class="bg-blue-50 text-blue-600 hover:bg-blue-100 p-1.5 rounded-lg transition" title="Lihat Nota / Unduh Gambar"><i class="fa-solid fa-receipt text-base"></i></button>
                     ${can('pesanan.write') ? `<button onclick="editPesanan('${ord.id}')" class="text-blue-600 hover:text-blue-800 p-1.5" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
                     ${can('pesanan.delete') ? `<button onclick="deletePesanan('${ord.id}')" class="text-red-600 hover:text-red-800 p-1.5" title="Hapus"><i class="fa-solid fa-trash"></i></button>` : ''}
@@ -931,8 +932,8 @@ function addItemRow(existingData = null) {
     rowDiv.id = rowId;
     rowDiv.className = 'bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2';
     rowDiv.innerHTML = `
-        <div class="flex items-center gap-2 relative">
-            <div class="flex-grow relative">
+        <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 relative">
+            <div class="relative w-full sm:w-auto sm:flex-1 sm:min-w-0">
                 <input type="hidden" class="product-id-val" value="${esc(existingProdId)}">
                 <input type="text" oninput="onProductInput('${rowId}')" onfocus="onProductInput('${rowId}')" autocomplete="off" placeholder="Ketik atau pilih nama produk..." class="product-search-input w-full text-xs border border-gray-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary" value="${esc(existingProdName)}">
                 <div class="product-dropdown-list absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto hidden"></div>
@@ -940,10 +941,10 @@ function addItemRow(existingData = null) {
             <div class="w-20">
                 <input type="number" min="1" value="${qtyVal}" onchange="calculateTotalPesanan()" oninput="calculateTotalPesanan()" class="item-qty w-full text-xs border border-gray-200 rounded-lg p-2 text-center bg-white focus:outline-none focus:ring-2 focus:ring-primary" placeholder="Qty">
             </div>
-            <div class="w-28 text-right font-bold text-xs text-emerald-600 item-subtotal">
+            <div class="flex-1 sm:flex-none sm:w-28 text-right font-bold text-sm sm:text-xs text-emerald-600 item-subtotal">
                 Rp 0
             </div>
-            <button type="button" onclick="document.getElementById('${rowId}').remove(); calculateTotalPesanan();" class="text-red-500 hover:text-red-700 p-1 text-sm"><i class="fa-solid fa-trash"></i></button>
+            <button type="button" onclick="document.getElementById('${rowId}').remove(); calculateTotalPesanan();" class="text-red-500 hover:text-red-700 w-9 h-9 sm:w-auto sm:h-auto sm:p-1 text-sm flex items-center justify-center" aria-label="Hapus baris"><i class="fa-solid fa-trash"></i></button>
         </div>
         <div class="varian-container hidden relative">
             <label class="block text-[10px] font-semibold text-gray-500 uppercase mb-1">Varian / Kode Warna Cat Semprot</label>
@@ -1472,11 +1473,11 @@ function renderLaporan() {
 
             return `
                 <tr class="hover:bg-gray-50 transition">
-                    <td class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}</td>
-                    <td class="py-3 px-4 text-gray-600 text-xs whitespace-nowrap">${esc(waktu)}</td>
-                    <td class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}</td>
-                    <td class="py-3 px-4 text-gray-600 text-xs max-w-xs truncate" title="${esc(itemsDesc)}">${esc(itemsDesc)}</td>
-                    <td class="py-3 px-4 font-bold text-emerald-600">${formatRupiah(itemSumHarga)}</td>
+                    <td data-label="No. Nota" class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}</td>
+                    <td data-label="Waktu" class="py-3 px-4 text-gray-600 text-xs whitespace-nowrap">${esc(waktu)}</td>
+                    <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}</td>
+                    <td data-label="Item" class="py-3 px-4 text-gray-600 text-xs max-w-xs truncate" title="${esc(itemsDesc)}">${esc(itemsDesc)}</td>
+                    <td data-label="Subtotal" class="py-3 px-4 font-bold text-emerald-600">${formatRupiah(itemSumHarga)}</td>
                 </tr>
             `;
         }).join('');

@@ -76,3 +76,8 @@ vercel --prod
 ## F. Pindahkan data lama
 Aplikasi lama: **Backup** (unduh JSON). Aplikasi online (Admin): **Restore** (pilih file tadi).
 Restore menambah/menimpa berdasarkan ID dan tidak menghapus data lain.
+
+## G. Tampilan HP
+Di layar < 640px: menu tab pindah ke bawah, tabel tampil sebagai kartu, dialog muncul dari bawah (bottom sheet),
+header dua baris dengan tombol ikon. Di layar lebar tampilan tetap seperti semula.
+Bila menambah kolom tabel baru, beri atribut `data-label="Nama Kolom"` pada `<td>` agar labelnya muncul di kartu HP.
