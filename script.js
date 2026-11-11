@@ -52,6 +52,17 @@ function toLocalDateStr(input) {
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+// Awal & akhir bulan berjalan (format YYYY-MM-DD, tanggal lokal) dan namanya.
+function getBulanIniRange() {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    return {
+        dari: toLocalDateStr(new Date(y, m, 1)),
+        sampai: toLocalDateStr(new Date(y, m + 1, 0)),
+        nama: now.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+    };
+}
+
 // ================= KONEKSI SUPABASE =================
 let sb = null;
 try {
@@ -589,9 +600,10 @@ function switchTab(tabId) {
     if (tabId === 'produk') renderProduk();
     if (tabId === 'pelanggan') renderPelanggan();
     if (tabId === 'laporan') {
-        if (!laporanInitialized) {
+        if (!laporanInitialized || laporanAutoMonth) {
+            // pertama dibuka / belum diubah manual: selalu bulan berjalan (otomatis kosong di awal bulan)
             laporanInitialized = true;
-            setLaporanHariIni();
+            setLaporanBulanIni();
         } else {
             renderLaporan();
         }
@@ -818,6 +830,16 @@ function renderPesanan() {
     const tbody = document.getElementById('table-pesanan-body');
     tbody.innerHTML = '';
 
+    // Tanpa filter tanggal: hanya pesanan BULAN BERJALAN (awal bulan otomatis kosong).
+    // Pesanan bulan/tanggal lain tampil lewat Filter Tanggal.
+    const bulan = getBulanIniRange();
+    const hint = document.getElementById('pesanan-scope-hint');
+    if (hint) {
+        hint.textContent = filterDate
+            ? `Menampilkan pesanan tanggal ${formatTanggalIndo(filterDate)}. Klik Reset untuk kembali ke bulan ini.`
+            : `Menampilkan pesanan bulan ${bulan.nama}. Pilih Filter Tanggal untuk melihat pesanan tanggal / bulan lain.`;
+    }
+
     let filtered = pesananList.filter(ord => {
         const pel = pelangganList.find(c => c.id === ord.pelangganId);
         const pelName = pel ? pel.nama.toLowerCase() : '';
@@ -825,13 +847,13 @@ function renderPesanan() {
             (ord.noOrder || '').toLowerCase().includes(keyword) || (ord.kodeSalesman || '').toLowerCase().includes(keyword);
         
         const ordDate = toLocalDateStr(ord.tanggal);
-        const matchDate = filterDate ? ordDate === filterDate : true;
+        const matchDate = filterDate ? ordDate === filterDate : (ordDate >= bulan.dari && ordDate <= bulan.sampai);
 
         return matchKeyword && matchDate;
     });
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-gray-400">Tidak ada pesanan ditemukan.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-gray-400">${filterDate ? 'Tidak ada pesanan ditemukan pada tanggal ini.' : 'Belum ada pesanan bulan ini. Pilih Filter Tanggal untuk melihat pesanan sebelumnya.'}</td></tr>`;
         return;
     }
 
@@ -1858,9 +1880,22 @@ function sendToWhatsappFinal() {
 // ================= LAPORAN & REKAP =================
 let laporanInitialized = false;
 
+let laporanAutoMonth = true;   // true = rentang otomatis bulan berjalan (belum diubah manual)
+
+// Dipanggil saat tanggal diubah manual lewat kolom tanggal.
+function laporanTanggalDiubah() {
+    laporanAutoMonth = false;
+    renderLaporan();
+}
+
 function getLaporanRange() {
     let dari = byId('laporan-dari').value;
     let sampai = byId('laporan-sampai').value;
+    // Kedua tanggal kosong -> otomatis bulan berjalan (bukan semua data)
+    if (!dari && !sampai) {
+        const b = getBulanIniRange();
+        dari = b.dari; sampai = b.sampai;
+    }
     if (dari && sampai && dari > sampai) [dari, sampai] = [sampai, dari];
     return { dari, sampai };
 }
@@ -1886,28 +1921,29 @@ function formatTanggalIndo(str) {
 
 function getLaporanLabel() {
     const { dari, sampai } = getLaporanRange();
-    if (!dari && !sampai) return 'Semua Tanggal';
     if (dari && sampai) return dari === sampai ? formatTanggalIndo(dari) : `${formatTanggalIndo(dari)} - ${formatTanggalIndo(sampai)}`;
     return dari ? `Mulai ${formatTanggalIndo(dari)}` : `Sampai ${formatTanggalIndo(sampai)}`;
 }
 
 function getLaporanFileSuffix() {
     const { dari, sampai } = getLaporanRange();
-    if (!dari && !sampai) return 'Semua';
     if (dari && sampai) return dari === sampai ? dari : `${dari}_sd_${sampai}`;
     return dari ? `mulai_${dari}` : `sampai_${sampai}`;
 }
 
 function setLaporanHariIni() {
+    laporanAutoMonth = false;
     const today = toLocalDateStr(new Date());
     byId('laporan-dari').value = today;
     byId('laporan-sampai').value = today;
     renderLaporan();
 }
 
-function setLaporanSemua() {
-    byId('laporan-dari').value = '';
-    byId('laporan-sampai').value = '';
+function setLaporanBulanIni() {
+    laporanAutoMonth = true;
+    const b = getBulanIniRange();
+    byId('laporan-dari').value = b.dari;
+    byId('laporan-sampai').value = b.sampai;
     renderLaporan();
 }
 
