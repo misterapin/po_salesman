@@ -1661,21 +1661,58 @@ function renderA4Canvas(models) {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-function saveCanvas(canvas, filename) {
+function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.download = filename;
+    a.href = url;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function canvasToBlob(canvas, type, quality) {
     return new Promise((resolve, reject) => {
-        canvas.toBlob(blob => {
-            if (!blob) { reject(new Error('Gambar gagal dibuat.')); return; }
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.download = filename;
-            a.href = url;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 10000);
-            resolve();
-        }, 'image/png');
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Gambar gagal dibuat.')), type, quality);
     });
+}
+
+async function saveCanvas(canvas, filename) {
+    saveBlob(await canvasToBlob(canvas, 'image/png'), filename);
+}
+
+// Membuat file PDF sederhana (tanpa library): tiap halaman berisi satu gambar JPEG penuh.
+// pages = [{ jpeg: Uint8Array, w: piksel, h: piksel }], ukuran halaman A4 landscape (297 x 210 mm).
+function buildPdfFromJpegs(pages) {
+    const PW = 841.89, PH = 595.28;   // A4 landscape dalam poin
+    const enc = new TextEncoder();
+    const parts = [];
+    const offsets = [];
+    let pos = 0;
+    const add = (x) => { const b = typeof x === 'string' ? enc.encode(x) : x; parts.push(b); pos += b.length; };
+    const obj = (n, fn) => { offsets[n] = pos; add(`${n} 0 obj\n`); fn(); add('\nendobj\n'); };
+
+    const total = 2 + pages.length * 3;
+    add('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+    obj(1, () => add('<< /Type /Catalog /Pages 2 0 R >>'));
+    obj(2, () => add(`<< /Type /Pages /Count ${pages.length} /Kids [${pages.map((_, i) => `${3 + i * 3} 0 R`).join(' ')}] >>`));
+    pages.forEach((p, i) => {
+        const po = 3 + i * 3, co = po + 1, io = po + 2;
+        obj(po, () => add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /XObject << /Im0 ${io} 0 R >> >> /Contents ${co} 0 R >>`));
+        const content = `q ${PW} 0 0 ${PH} 0 0 cm /Im0 Do Q`;
+        obj(co, () => add(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
+        obj(io, () => {
+            add(`<< /Type /XObject /Subtype /Image /Width ${p.w} /Height ${p.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.jpeg.length} >>\nstream\n`);
+            add(p.jpeg);
+            add('\nendstream');
+        });
+    });
+    const xrefPos = pos;
+    add(`xref\n0 ${total + 1}\n0000000000 65535 f \n`);
+    for (let n = 1; n <= total; n++) add(String(offsets[n]).padStart(10, '0') + ' 00000 n \n');
+    add(`trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`);
+    return new Blob(parts, { type: 'application/pdf' });
 }
 
 let notaBusy = false;
@@ -1754,6 +1791,38 @@ async function exportLaporanImageA4() {
         if (pages.length > 1) alert(`${pages.length} file gambar A4 telah diunduh (masing-masing berisi maksimal 4 form).`);
     } catch (err) {
         alert('Gagal mengunduh rekap A4: ' + err.message);
+    } finally {
+        notaBusy = false;
+    }
+}
+
+// Unduh rekap A4 dalam bentuk PDF: isi dan susunan SAMA dengan Unduh Gambar A4 (4 form A6 per halaman, 2 x 2).
+async function exportLaporanPdfA4() {
+    if (notaBusy) return;
+    const filtered = getLaporanFiltered();
+    if (filtered.length === 0) {
+        alert('Tidak ada data pesanan pada periode ini untuk diunduh!');
+        return;
+    }
+
+    const models = [];
+    filtered.forEach(ord => buildNotaModels(ord).forEach(m => models.push(m)));
+    const groups = [];
+    for (let i = 0; i < models.length; i += 4) groups.push(models.slice(i, i + 4));
+
+    notaBusy = true;
+    try {
+        if (document.fonts && document.fonts.ready) await document.fonts.ready;
+        const pages = [];
+        for (let i = 0; i < groups.length; i++) {
+            const canvas = renderA4Canvas(groups[i]);
+            const blob = await canvasToBlob(canvas, 'image/jpeg', 0.92);
+            pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), w: canvas.width, h: canvas.height });
+            await sleep(0);
+        }
+        saveBlob(buildPdfFromJpegs(pages), `Rekap_Pesanan_A4_${getLaporanFileSuffix()}.pdf`);
+    } catch (err) {
+        alert('Gagal membuat PDF rekap A4: ' + err.message);
     } finally {
         notaBusy = false;
     }
@@ -1920,7 +1989,7 @@ function exportExcelLaporan() {
 }
 
 function printLaporan() {
-    window.print();
+    exportLaporanPdfA4();
 }
 
 // ================= BACKUP & RESTORE DATABASE =================
