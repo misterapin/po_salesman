@@ -169,3 +169,73 @@
     html.dark .responsive-table td[data-label="Aksi"] { border-top-color: #334155; }
     html.dark .responsive-table td[data-label="Aksi"] button { border-color: #334155; }
 }
+
+/* ===================================================================
+   NOTA A6 LANDSCAPE  (148 x 105 mm)  &  REKAP A4 LANDSCAPE (4 form)
+   - Ukuran memakai satuan mm agar sama persis saat dicetak maupun diunduh.
+   - 1 halaman A4 landscape (297 x 210 mm) = tepat 4 lembar A6 (2 x 2).
+   =================================================================== */
+.nota-a6 {
+    box-sizing: border-box; width: 148mm; height: 105mm; padding: 3.5mm 5mm;
+    background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif;
+    font-size: 7pt; line-height: 1.2; display: flex; flex-direction: column;
+    overflow: hidden; text-align: left;
+}
+.nota-a6 *, .a4-page *, .a4-cell * { box-sizing: border-box; }
+
+.na-head { flex: none; display: flex; justify-content: space-between; align-items: flex-start; gap: 4mm;
+    min-height: 10.5mm; padding-bottom: 1mm; border-bottom: .3mm solid #111; }
+.na-head-l { flex: 1; min-width: 0; }
+.na-shop { font-size: 10pt; font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.na-addr { font-size: 6.5pt; color: #444; margin-top: .4mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 2.6mm; }
+.na-head-r { flex: none; text-align: right; }
+.na-title { font-size: 9pt; font-weight: 800; letter-spacing: .4pt; }
+.na-meta { font-size: 6.5pt; color: #333; margin-top: .3mm; }
+
+.na-info { flex: none; display: flex; align-items: flex-end; gap: 3mm; margin-top: 1.5mm; height: 5.5mm; }
+.na-f { flex: 1 1 0; min-width: 0; display: flex; align-items: flex-end; }
+.na-fl { flex: none; font-weight: 700; font-size: 6.5pt; margin-right: 1mm; white-space: nowrap; line-height: 3.6mm; }
+.na-fv { flex: 1; min-width: 0; height: 3.8mm; line-height: 3.6mm; padding: 0 .8mm; font-weight: 700; border-bottom: .25mm solid #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.na-pay { flex: none; display: flex; align-items: center; gap: 3mm; height: 4.5mm; }
+.na-cb { display: inline-flex; align-items: center; gap: 1mm; font-weight: 700; font-size: 7pt; }
+.na-box { display: inline-block; width: 3.4mm; height: 3.4mm; border: .3mm solid #111; text-align: center; font-style: normal; font-weight: 800; font-size: 7pt; line-height: 2.9mm; }
+
+.na-tbl { flex: 1 1 auto; min-height: 0; margin-top: 1.5mm; border: .3mm solid #111; display: flex; flex-direction: column; overflow: hidden; }
+.na-tr { flex: none; display: grid; grid-template-columns: 6mm minmax(0, 1fr) 20mm 18mm 24mm; column-gap: 1mm;
+    height: 4.2mm; line-height: 4.2mm; padding: 0 1mm; border-bottom: .15mm solid #ccc; }
+.na-tr > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.na-th { height: 4mm; line-height: 4mm; font-weight: 700; font-size: 6.5pt; background: #ececec; border-bottom: .3mm solid #111; }
+.na-c-no { text-align: center; }
+.na-c-q, .na-c-h, .na-c-s { text-align: right; }
+.na-var { color: #555; font-size: 6pt; }
+
+.na-note { flex: none; margin-top: 1mm; font-size: 6.5pt; line-height: 1.2; max-height: 5.6mm; overflow: hidden; }
+.na-total { flex: none; display: flex; justify-content: space-between; align-items: center; margin-top: 1mm; height: 4.5mm; font-weight: 800; font-size: 8.5pt; }
+.na-sign { flex: none; display: flex; gap: 2mm; margin-top: 1.2mm; }
+.na-sb { flex: 1; height: 15mm; border: .3mm solid #111; display: flex; flex-direction: column; }
+.na-sl { height: 3.8mm; line-height: 3.8mm; text-align: center; font-weight: 700; font-size: 6.5pt; border-bottom: .2mm solid #888; background: #f1f1f1; }
+.na-more { flex: none; margin-top: 1mm; text-align: right; font-size: 6.5pt; font-style: italic; color: #444; height: 3mm; }
+
+/* Pratinjau di layar (diskalakan lewat JS) */
+.nota-fit { width: 100%; overflow: hidden; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; }
+.nota-fit-inner { width: 148mm; }
+
+/* Panggung tersembunyi untuk membuat gambar */
+.nota-stage { position: absolute; top: 0; left: -10000px; background: #fff; z-index: -1; }
+.nota-stage-item { width: 148mm; height: 105mm; }
+
+/* Halaman A4 landscape berisi 4 form A6 (2 x 2) */
+.a4-page { width: 297mm; height: 210mm; background: #fff; display: grid;
+    grid-template-columns: 148.5mm 148.5mm; grid-template-rows: 105mm 105mm; overflow: hidden; }
+.a4-cell { position: relative; width: 148.5mm; height: 105mm; overflow: hidden; }
+.a4-cell::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: .2mm dashed #b5b5b5; pointer-events: none; }
+
+/* Cetak nota A6 (ukuran kertas diatur lewat @page yang disisipkan saat mencetak) */
+#nota-print-root { display: none; }
+@media print {
+    html.printing-nota body > *:not(#nota-print-root) { display: none !important; }
+    html.printing-nota #nota-print-root { display: block !important; }
+    html.printing-nota, html.printing-nota body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+    html.printing-nota .nota-a6 { break-after: page; page-break-after: always; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html.printing-nota .nota-a6:last-child { break-after: auto; page-break-after: auto; }
+}

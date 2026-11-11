@@ -66,9 +66,12 @@ try {
 const EMAIL_DOMAIN = 'po-salesman.app';
 const usernameToEmail = (u) => `${String(u).trim().toLowerCase()}@${EMAIL_DOMAIN}`;
 
-// Bila kolom 'catatan' belum ada di database, pesanan tanpa catatan tetap bisa disimpan.
-let catatanSupported = true;
-const MSG_CATATAN = 'Kolom "catatan" belum ada di database. Jalankan SQL di supabase/migrasi_catatan.sql pada Supabase SQL Editor, lalu coba lagi.';
+// Kolom tambahan pada tabel pesanan. Bila kolom belum ada di database, pesanan yang tidak
+// memakai kolom itu tetap bisa disimpan; mengisinya akan menampilkan pesan pengingat migrasi.
+const PESANAN_EXTRA = { catatan: 'catatan', noOrder: 'no_order', kodeSalesman: 'kode_salesman', pembayaran: 'pembayaran' };
+const extraSupported = { catatan: true, no_order: true, kode_salesman: true, pembayaran: true };
+const EXTRA_COL_RE = /catatan|no_order|kode_salesman|pembayaran/i;
+const MSG_KOLOM = 'Kolom baru (catatan / no. order / kode salesman / pembayaran) belum ada di database. Jalankan SQL di supabase/migrasi_nota_a6.sql pada Supabase SQL Editor, lalu coba lagi.';
 
 const TABLE_MAP = {
     produk: {
@@ -92,10 +95,13 @@ const TABLE_MAP = {
                 pelanggan_id: o.pelangganId || null,
                 items: o.items || []
             };
-            if (catatanSupported || o.catatan) row.catatan = o.catatan || '';
+            Object.keys(PESANAN_EXTRA).forEach(k => {
+                const col = PESANAN_EXTRA[k];
+                if (extraSupported[col] || o[k]) row[col] = o[k] || '';
+            });
             return row;
         },
-        from: (r) => ({ id: r.id, noNota: r.no_nota, tanggal: r.tanggal, pelangganId: r.pelanggan_id, items: r.items || [], catatan: r.catatan || '' })
+        from: (r) => ({ id: r.id, noNota: r.no_nota, tanggal: r.tanggal, pelangganId: r.pelanggan_id, items: r.items || [], catatan: r.catatan || '', noOrder: r.no_order || '', kodeSalesman: r.kode_salesman || '', pembayaran: r.pembayaran || '' })
     }
 };
 
@@ -116,14 +122,14 @@ async function dbFetchAll(table) {
         out.push(...data);
         if (data.length < size) break;
     }
-    if (table === 'pesanan' && out.length) catatanSupported = ('catatan' in out[0]);
+    if (table === 'pesanan' && out.length) Object.keys(extraSupported).forEach(col => { extraSupported[col] = (col in out[0]); });
     return out.map(cfg.from);
 }
 
 async function dbUpsert(table, obj) {
     const { error } = await sb.from(table).upsert(TABLE_MAP[table].to(obj));
     if (error) {
-        if (/catatan/i.test(error.message || '')) error.message = MSG_CATATAN;
+        if (EXTRA_COL_RE.test(error.message || '')) error.message = MSG_KOLOM;
         throw error;
     }
 }
@@ -133,7 +139,7 @@ async function dbUpsertMany(table, list) {
     for (let i = 0; i < rows.length; i += 500) {
         const { error } = await sb.from(table).upsert(rows.slice(i, i + 500));
         if (error) {
-            if (/catatan/i.test(error.message || '')) error.message = MSG_CATATAN;
+            if (EXTRA_COL_RE.test(error.message || '')) error.message = MSG_KOLOM;
             throw error;
         }
     }
@@ -815,7 +821,8 @@ function renderPesanan() {
     let filtered = pesananList.filter(ord => {
         const pel = pelangganList.find(c => c.id === ord.pelangganId);
         const pelName = pel ? pel.nama.toLowerCase() : '';
-        const matchKeyword = ord.noNota.toLowerCase().includes(keyword) || pelName.includes(keyword);
+        const matchKeyword = ord.noNota.toLowerCase().includes(keyword) || pelName.includes(keyword) ||
+            (ord.noOrder || '').toLowerCase().includes(keyword) || (ord.kodeSalesman || '').toLowerCase().includes(keyword);
         
         const ordDate = toLocalDateStr(ord.tanggal);
         const matchDate = filterDate ? ordDate === filterDate : true;
@@ -836,7 +843,7 @@ function renderPesanan() {
 
         tbody.innerHTML += `
             <tr class="hover:bg-gray-50 transition">
-                <td data-label="No. Nota" class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}</td>
+                <td data-label="No. Nota" class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}${ord.pembayaran ? ` <span class="font-sans text-[10px] font-bold px-1.5 py-0.5 rounded ${ord.pembayaran === 'tempo' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">${esc(ord.pembayaran.toUpperCase())}</span>` : ''}${(ord.noOrder || ord.kodeSalesman) ? `<div class="font-sans text-[11px] font-normal text-gray-500 mt-0.5">${ord.noOrder ? 'Order: ' + esc(ord.noOrder) : ''}${(ord.noOrder && ord.kodeSalesman) ? ' &bull; ' : ''}${ord.kodeSalesman ? 'Sales: ' + esc(ord.kodeSalesman) : ''}</div>` : ''}</td>
                 <td data-label="Waktu" class="py-3 px-4 text-gray-600 text-xs">${formattedDate}</td>
                 <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}${ord.catatan ? `<div class="text-[11px] font-normal text-amber-600 mt-0.5 max-w-xs sm:truncate" title="${esc(ord.catatan)}">📝 ${esc(ord.catatan)}</div>` : ''}</td>
                 <td data-label="Total Item" class="py-3 px-4 text-gray-600">${totalQty} item</td>
@@ -878,6 +885,9 @@ function openModalPesanan(id = null) {
         container.innerHTML = '';
         ord.items.forEach(item => addItemRow(item));
         document.getElementById('pesanan-catatan').value = ord.catatan || '';
+        document.getElementById('pesanan-no-order').value = ord.noOrder || '';
+        document.getElementById('pesanan-kode-salesman').value = ord.kodeSalesman || '';
+        setPembayaran(ord.pembayaran || '');
     } else {
         document.getElementById('modal-pesanan-title').innerText = 'Buat Pesanan Baru';
         document.getElementById('pesanan-id').value = '';
@@ -885,10 +895,30 @@ function openModalPesanan(id = null) {
         document.getElementById('pesanan-pelanggan-input').value = '';
         document.getElementById('items-container').innerHTML = '';
         document.getElementById('pesanan-catatan').value = '';
+        document.getElementById('pesanan-no-order').value = '';
+        document.getElementById('pesanan-kode-salesman').value = '';
+        setPembayaran('');
         addItemRow();
     }
     updateCatatanCount();
     calculateTotalPesanan();
+}
+
+// Cash / Tempo: dua kotak centang yang saling meniadakan (boleh keduanya kosong)
+function onBayarChange(which) {
+    const cash = document.getElementById('pesanan-bayar-cash');
+    const tempo = document.getElementById('pesanan-bayar-tempo');
+    if (which === 'cash' && cash.checked) tempo.checked = false;
+    if (which === 'tempo' && tempo.checked) cash.checked = false;
+}
+function setPembayaran(val) {
+    document.getElementById('pesanan-bayar-cash').checked = (val === 'cash');
+    document.getElementById('pesanan-bayar-tempo').checked = (val === 'tempo');
+}
+function getPembayaran() {
+    if (document.getElementById('pesanan-bayar-cash').checked) return 'cash';
+    if (document.getElementById('pesanan-bayar-tempo').checked) return 'tempo';
+    return '';
 }
 
 function updateCatatanCount() {
@@ -1119,6 +1149,9 @@ async function savePesanan() {
     const id = document.getElementById('pesanan-id').value;
     const pelangganId = document.getElementById('pesanan-pelanggan-id').value;
     const catatan = document.getElementById('pesanan-catatan').value.trim();
+    const noOrder = document.getElementById('pesanan-no-order').value.trim();
+    const kodeSalesman = document.getElementById('pesanan-kode-salesman').value.trim();
+    const pembayaran = getPembayaran();
 
     const rows = document.querySelectorAll('#items-container > div');
     let items = [];
@@ -1155,7 +1188,7 @@ async function savePesanan() {
         if (id) {
             const existing = pesananList.find(o => o.id === id);
             if (!existing) { alert('Pesanan tidak ditemukan. Muat ulang halaman lalu coba lagi.'); return; }
-            const updated = { ...existing, pelangganId, items, catatan };
+            const updated = { ...existing, pelangganId, items, catatan, noOrder, kodeSalesman, pembayaran };
             await dbUpsert('pesanan', updated);
             Object.assign(existing, updated);
         } else {
@@ -1168,7 +1201,10 @@ async function savePesanan() {
                     tanggal: new Date().toISOString(),
                     pelangganId: pelangganId,
                     items: items,
-                    catatan: catatan
+                    catatan: catatan,
+                    noOrder: noOrder,
+                    kodeSalesman: kodeSalesman,
+                    pembayaran: pembayaran
                 };
                 try {
                     await dbUpsert('pesanan', cand);
@@ -1218,23 +1254,18 @@ function previewWhatsapp(id) {
     const pel = pelangganList.find(c => c.id === ord.pelangganId) || { nama: 'Umum', hp: '-', alamat: '-' };
     currentWhatsappPhone = pel.hp || '';
     currentNotaNo = ord.noNota;
+    currentNotaId = ord.id;
 
     const dateObj = new Date(ord.tanggal);
     const formattedDate = dateObj.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
-
-    const invNota = document.getElementById('inv-no-nota');
-    if (invNota) invNota.innerText = ord.noNota;
-    document.getElementById('inv-nama-toko').innerText = pel.nama;
-    document.getElementById('inv-alamat-toko').innerText = pel.alamat || '-';
-    document.getElementById('inv-date').innerText = formattedDate;
-
-    const itemsBody = document.getElementById('inv-items-body');
-    itemsBody.innerHTML = '';
 
     let grandTotal = 0;
     let textWa = `📦 *NOTA PESANAN* 📦\n`;
     textWa += `----------------------------------------\n`;
     textWa += `No. Nota     : *${ord.noNota}*\n`;
+    if (ord.noOrder) textWa += `No. Order    : *${ord.noOrder}*\n`;
+    if (ord.kodeSalesman) textWa += `Kode Salesman: ${ord.kodeSalesman}\n`;
+    if (ord.pembayaran) textWa += `Pembayaran   : *${ord.pembayaran.toUpperCase()}*\n`;
     textWa += `Tanggal      : ${formattedDate}\n`;
     textWa += `Toko/Pemesan : *${pel.nama}*\n`;
     textWa += `Alamat       : ${pel.alamat || '-'}\n`;
@@ -1245,19 +1276,6 @@ function previewWhatsapp(id) {
     ord.items.forEach((item, idx) => {
         const sub = item.qty * item.harga;
         grandTotal += sub;
-        
-        let colorInfo = item.varianWarna ? `<br><span class="text-[10px] text-gray-500">🎨 Varian: ${esc(item.varianWarna)}</span>` : '';
-        itemsBody.innerHTML += `
-            <tr>
-                <td class="py-2 pr-2">
-                    <span class="font-semibold text-gray-800">${esc(item.nama)}</span>
-                    ${colorInfo}
-                </td>
-                <td class="py-2 px-2 text-center text-gray-600">${item.qty} ${item.satuan || 'Pcs'}</td>
-                <td class="py-2 pl-2 text-right font-medium text-gray-800">${formatRupiah(sub)}</td>
-            </tr>
-        `;
-
         textWa += `${idx + 1}. ${item.nama}\n`;
         if (item.varianWarna) {
             textWa += `   🎨 Varian Warna: *${item.varianWarna}*\n`;
@@ -1265,13 +1283,6 @@ function previewWhatsapp(id) {
         textWa += `   ${item.qty} ${item.satuan || 'Pcs'} x ${formatRupiah(item.harga)} = *${formatRupiah(sub)}*\n`;
     });
 
-    document.getElementById('inv-total').innerText = formatRupiah(grandTotal);
-
-    const catWrap = document.getElementById('inv-catatan-wrap');
-    if (catWrap) {
-        catWrap.classList.toggle('hidden', !ord.catatan);
-        document.getElementById('inv-catatan').innerText = ord.catatan || '';
-    }
     if (ord.catatan) {
         textWa += `----------------------------------------\n`;
         textWa += `📝 *Catatan:*\n${ord.catatan}\n`;
@@ -1282,123 +1293,230 @@ function previewWhatsapp(id) {
     textWa += `----------------------------------------`;
 
     document.getElementById('whatsapp-text-area').value = textWa;
+
+    // Pratinjau lembar nota A6 landscape
+    document.getElementById('inv-sheets').innerHTML = buildNotaSheets(ord)
+        .map(sheet => `<div class="nota-fit"><div class="nota-fit-inner">${sheet}</div></div>`).join('');
     document.getElementById('modal-whatsapp').classList.remove('hidden');
+    fitNotaPreview();
 }
 
 function closeModalWhatsapp() {
     document.getElementById('modal-whatsapp').classList.add('hidden');
 }
 
-function downloadInvoiceImage() {
-    const invoiceElement = document.getElementById('printable-invoice');
-    
-    html2canvas(invoiceElement, {
-        scale: 2,
-        backgroundColor: '#ffffff'
-    }).then(canvas => {
-        const imageLink = document.createElement('a');
-        imageLink.download = `Nota_${currentNotaNo || 'Pesanan'}.png`;
-        imageLink.href = canvas.toDataURL('image/png');
-        imageLink.click();
-    }).catch(err => {
-        alert('Gagal mengunduh gambar nota: ' + err.message);
+// ================= UNDUH GAMBAR A4 REKAP SEMUA PESANAN =================
+// ================= NOTA A6 LANDSCAPE (148 x 105 mm) =================
+let currentNotaId = '';
+const NOTA_ROWS_LAST = 12;      // baris item pada lembar terakhir (memuat total + kotak paraf)
+const NOTA_ROWS_LAST_CAT = 10;  // idem, bila ada catatan
+const NOTA_ROWS_MID = 16;       // baris item pada lembar lanjutan (bila item sangat banyak)
+const NOTA_SCALE = 300 / 96;    // unduhan gambar ~300 dpi (A6 = 1748 x 1240 px, A4 = 3508 x 2480 px)
+
+function fmtNum(n) {
+    return Number(n || 0).toLocaleString('id-ID');
+}
+
+// Mengembalikan daftar HTML lembar A6. Satu pesanan = 1 lembar; bila item melebihi
+// kapasitas, otomatis bersambung ke lembar berikutnya (total & paraf di lembar terakhir).
+function buildNotaSheets(ord) {
+    const pel = pelangganList.find(c => c.id === ord.pelangganId) || { nama: 'Umum', hp: '', alamat: '-' };
+    const items = ord.items || [];
+    const catatan = (ord.catatan || '').trim();
+    const capLast = catatan ? NOTA_ROWS_LAST_CAT : NOTA_ROWS_LAST;
+
+    const chunks = [];
+    let rest = items.slice();
+    while (rest.length > capLast) {
+        const take = Math.min(NOTA_ROWS_MID, rest.length - 1);
+        chunks.push(rest.slice(0, take));
+        rest = rest.slice(take);
+    }
+    chunks.push(rest);
+
+    const grand = items.reduce((t, i) => t + i.qty * i.harga, 0);
+    const tgl = new Date(ord.tanggal).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+    const alamat = (pel.alamat && pel.alamat !== '-') ? pel.alamat : '';
+    const hp = (pel.hp && pel.hp !== '-') ? pel.hp : '';
+    const alamatLine = [alamat, hp].filter(Boolean).join('  •  ');
+    const bayar = ord.pembayaran || '';
+    let no = 0;
+
+    return chunks.map((chunk, idx) => {
+        const isLast = idx === chunks.length - 1;
+        const rows = chunk.map(it => {
+            no++;
+            const nama = esc(it.nama) + (it.varianWarna ? ` <span class="na-var">(${esc(it.varianWarna)})</span>` : '');
+            return `<div class="na-tr"><span class="na-c-no">${no}</span><span class="na-c-nm">${nama}</span>` +
+                `<span class="na-c-q">${esc(String(it.qty))} ${esc(it.satuan || 'Pcs')}</span>` +
+                `<span class="na-c-h">${fmtNum(it.harga)}</span><span class="na-c-s">${fmtNum(it.qty * it.harga)}</span></div>`;
+        }).join('');
+
+        const footer = isLast
+            ? (catatan ? `<div class="na-note"><b>Catatan:</b> ${esc(catatan)}</div>` : '') +
+              `<div class="na-total"><span>TOTAL</span><span>${formatRupiah(grand)}</span></div>` +
+              `<div class="na-sign">` +
+              ['Salesman', 'Gudang', 'Kacab'].map(n => `<div class="na-sb"><div class="na-sl">${n}</div></div>`).join('') +
+              `</div>`
+            : `<div class="na-more">bersambung ke halaman berikutnya &rarr;</div>`;
+
+        return `<div class="nota-a6">` +
+            `<div class="na-head">` +
+              `<div class="na-head-l"><div class="na-shop">${esc(pel.nama)}</div><div class="na-addr">${esc(alamatLine)}</div></div>` +
+              `<div class="na-head-r"><div class="na-title">NOTA PESANAN</div><div class="na-meta">${esc(ord.noNota)} &bull; ${esc(tgl)}</div>` +
+              (chunks.length > 1 ? `<div class="na-meta">Hal ${idx + 1}/${chunks.length}</div>` : '') + `</div>` +
+            `</div>` +
+            `<div class="na-info">` +
+              `<div class="na-f"><span class="na-fl">No. Order</span><span class="na-fv">${esc(ord.noOrder || '')}</span></div>` +
+              `<div class="na-f"><span class="na-fl">Kode Salesman</span><span class="na-fv">${esc(ord.kodeSalesman || '')}</span></div>` +
+              `<div class="na-pay"><span class="na-cb"><i class="na-box">${bayar === 'cash' ? 'X' : ''}</i>Cash</span>` +
+              `<span class="na-cb"><i class="na-box">${bayar === 'tempo' ? 'X' : ''}</i>Tempo</span></div>` +
+            `</div>` +
+            `<div class="na-tbl">` +
+              `<div class="na-tr na-th"><span class="na-c-no">No</span><span class="na-c-nm">Nama Produk</span><span class="na-c-q">Qty</span><span class="na-c-h">Harga</span><span class="na-c-s">Subtotal</span></div>` +
+              rows +
+            `</div>` +
+            footer +
+            `</div>`;
     });
 }
 
-// ================= UNDUH GAMBAR A4 REKAP SEMUA PESANAN =================
-function exportLaporanImageA4() {
-    const filtered = getLaporanFiltered();
+// Pratinjau diperkecil agar muat di lebar layar (HP); ukuran asli tetap 148 x 105 mm.
+function fitNotaPreview() {
+    document.querySelectorAll('#inv-sheets .nota-fit').forEach(wrap => {
+        const inner = wrap.firstElementChild;
+        const sheet = inner.firstElementChild;
+        const w = sheet.offsetWidth, hgt = sheet.offsetHeight;
+        if (!w) return;
+        const scale = Math.min(1, wrap.clientWidth / w);
+        inner.style.transform = `scale(${scale})`;
+        inner.style.transformOrigin = 'top left';
+        wrap.style.height = (hgt * scale + 2) + 'px';
+    });
+}
+window.addEventListener('resize', fitNotaPreview);
 
+// Panggung tersembunyi untuk memotret lembar menjadi gambar.
+function makeNotaStage(innerHtml) {
+    const stage = document.createElement('div');
+    stage.className = 'nota-stage';
+    stage.id = 'nota-stage';
+    stage.innerHTML = innerHtml;
+    document.body.appendChild(stage);
+    return stage;
+}
+
+function captureEl(el, width, height) {
+    return html2canvas(el, {
+        scale: NOTA_SCALE,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        windowWidth: Math.ceil(width) + 40,
+        windowHeight: Math.ceil(height) + 40,
+        onclone: (doc) => {
+            const st = doc.getElementById('nota-stage');
+            if (st) { st.style.left = '0'; st.style.top = '0'; }
+        }
+    });
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+function saveCanvas(canvas, filename) {
+    const a = document.createElement('a');
+    a.download = filename;
+    a.href = canvas.toDataURL('image/png');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+let notaBusy = false;
+
+async function downloadInvoiceImage() {
+    if (notaBusy) return;
+    const ord = pesananList.find(o => o.id === currentNotaId);
+    if (!ord) return;
+    if (typeof html2canvas === 'undefined') { alert('Library gambar belum termuat. Periksa koneksi internet lalu muat ulang halaman.'); return; }
+
+    notaBusy = true;
+    const sheets = buildNotaSheets(ord);
+    const stage = makeNotaStage(sheets.map(sh => `<div class="nota-stage-item">${sh}</div>`).join(''));
+    try {
+        const els = stage.querySelectorAll('.nota-a6');
+        for (let i = 0; i < els.length; i++) {
+            const canvas = await captureEl(els[i], els[i].offsetWidth, els[i].offsetHeight);
+            const suffix = els.length > 1 ? `_hal${i + 1}` : '';
+            saveCanvas(canvas, `Nota_${currentNotaNo || 'Pesanan'}${suffix}.png`);
+            if (i < els.length - 1) await sleep(400);
+        }
+    } catch (err) {
+        alert('Gagal mengunduh gambar nota: ' + err.message);
+    } finally {
+        stage.remove();
+        notaBusy = false;
+    }
+}
+
+// Cetak nota ukuran A6 landscape (148 x 105 mm)
+function printNota() {
+    const ord = pesananList.find(o => o.id === currentNotaId);
+    if (!ord) return;
+
+    const root = document.createElement('div');
+    root.id = 'nota-print-root';
+    root.innerHTML = buildNotaSheets(ord).join('');
+    document.body.appendChild(root);
+
+    const pageStyle = document.createElement('style');
+    pageStyle.id = 'nota-page-style';
+    pageStyle.textContent = '@page { size: 148mm 105mm; margin: 0; }';
+    document.head.appendChild(pageStyle);
+    document.documentElement.classList.add('printing-nota');
+
+    const cleanup = () => {
+        root.remove();
+        pageStyle.remove();
+        document.documentElement.classList.remove('printing-nota');
+        window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    setTimeout(() => window.print(), 80);
+}
+
+// Unduh rekap ukuran A4 (landscape): TEPAT 4 form A6 per halaman A4 (2 x 2).
+async function exportLaporanImageA4() {
+    if (notaBusy) return;
+    const filtered = getLaporanFiltered();
     if (filtered.length === 0) {
         alert('Tidak ada data pesanan pada periode ini untuk diunduh!');
         return;
     }
+    if (typeof html2canvas === 'undefined') { alert('Library gambar belum termuat. Periksa koneksi internet lalu muat ulang halaman.'); return; }
 
-    document.getElementById('a4-laporan-tanggal-label').innerText = `${getLaporanLabel()} (Total: ${filtered.length} Pesanan)`;
+    const sheets = [];
+    filtered.forEach(ord => buildNotaSheets(ord).forEach(sh => sheets.push(sh)));
+    const pages = [];
+    for (let i = 0; i < sheets.length; i += 4) pages.push(sheets.slice(i, i + 4));
 
-    const container = document.getElementById('a4-invoices-container');
-    container.innerHTML = '';
-
-    filtered.forEach((ord, index) => {
-        const pel = pelangganList.find(c => c.id === ord.pelangganId) || { nama: 'Umum', alamat: '-' };
-        
-        let itemsHtml = '';
-        let grandTotal = 0;
-
-        ord.items.forEach(item => {
-            const sub = item.qty * item.harga;
-            grandTotal += sub;
-            let colorInfo = item.varianWarna ? `<br><span class="text-[10px] text-gray-500">🎨 Varian: ${esc(item.varianWarna)}</span>` : '';
-            itemsHtml += `
-                <tr class="border-b border-gray-100">
-                    <td class="py-2 pr-2">
-                        <span class="font-semibold text-gray-800">${esc(item.nama)}</span>
-                        ${colorInfo}
-                    </td>
-                    <td class="py-2 px-2 text-center text-gray-600">${item.qty} ${item.satuan || 'Pcs'}</td>
-                    <td class="py-2 pl-2 text-right font-medium text-gray-800">${formatRupiah(sub)}</td>
-                </tr>
-            `;
-        });
-
-        const invoiceCard = document.createElement('div');
-        invoiceCard.className = 'bg-white p-5 rounded-xl border border-gray-300 shadow-sm space-y-3';
-        invoiceCard.innerHTML = `
-            <div class="flex justify-between items-center border-b pb-2">
-                <div>
-                    <div class="text-[10px] font-mono text-gray-500 font-bold">${esc(ord.noNota)}</div>
-                    <h3 class="font-bold text-sm text-gray-900">${esc(pel.nama)}</h3>
-                    <p class="text-gray-500 text-[11px]">${esc(pel.alamat || '-')}</p>
-                </div>
-                <div class="text-right text-xs text-gray-500 font-mono font-semibold">
-                    Pesanan #${index + 1}
-                </div>
-            </div>
-            <table class="w-full text-left text-xs">
-                <thead>
-                    <tr class="border-b text-gray-500">
-                        <th class="pb-1">Item Produk</th>
-                        <th class="pb-1 text-center">Qty</th>
-                        <th class="pb-1 text-right">Subtotal</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${itemsHtml}
-                </tbody>
-            </table>
-            ${ord.catatan ? `<div class="border-t pt-2 text-[11px] text-gray-700"><span class="font-semibold text-gray-500">Catatan:</span> <span style="white-space:pre-line">${esc(ord.catatan)}</span></div>` : ''}
-            <div class="border-t pt-2 flex justify-between items-center font-bold text-xs text-gray-900">
-                <span>TOTAL KESELURUHAN:</span>
-                <span class="text-emerald-600 text-sm">${formatRupiah(grandTotal)}</span>
-            </div>
-        `;
-        container.appendChild(invoiceCard);
-    });
-
-    const wrapper = document.getElementById('printable-laporan-a4-wrapper');
-    wrapper.style.display = 'block';
-    wrapper.style.position = 'fixed';
-    wrapper.style.top = '0';
-    wrapper.style.left = '0';
-    wrapper.style.zIndex = '99999';
-    wrapper.style.backgroundColor = '#ffffff';
-
-    const element = document.getElementById('printable-laporan-a4');
-
-    html2canvas(element, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        useCORS: true
-    }).then(canvas => {
-        wrapper.style.display = 'none';
-        const imageLink = document.createElement('a');
-        imageLink.download = `Rekap_Pesanan_A4_${getLaporanFileSuffix()}.png`;
-        imageLink.href = canvas.toDataURL('image/png');
-        imageLink.click();
-    }).catch(err => {
-        wrapper.style.display = 'none';
-        alert('Gagal mengunduh gambar rekap A4: ' + err.message);
-    });
+    notaBusy = true;
+    const stage = makeNotaStage(pages.map(p =>
+        `<div class="a4-page">${p.map(sh => `<div class="a4-cell">${sh}</div>`).join('')}</div>`).join(''));
+    try {
+        const els = stage.querySelectorAll('.a4-page');
+        for (let i = 0; i < els.length; i++) {
+            const canvas = await captureEl(els[i], els[i].offsetWidth, els[i].offsetHeight);
+            const suffix = els.length > 1 ? `_hal${i + 1}-dari-${els.length}` : '';
+            saveCanvas(canvas, `Rekap_Pesanan_A4_${getLaporanFileSuffix()}${suffix}.png`);
+            if (i < els.length - 1) await sleep(500);
+        }
+        if (els.length > 1) alert(`${els.length} file gambar A4 telah diunduh (masing-masing berisi maksimal 4 form).`);
+    } catch (err) {
+        alert('Gagal mengunduh rekap A4: ' + err.message);
+    } finally {
+        stage.remove();
+        notaBusy = false;
+    }
 }
 
 function copyWhatsappText() {
@@ -1547,6 +1665,9 @@ function exportExcelLaporan() {
                 'Satuan': item.satuan || 'Pcs',
                 'Harga Satuan': item.harga,
                 'Subtotal': item.qty * item.harga,
+                'No. Order': ord.noOrder || '',
+                'Kode Salesman': ord.kodeSalesman || '',
+                'Pembayaran': ord.pembayaran ? ord.pembayaran.toUpperCase() : '',
                 'Catatan Pesanan': ord.catatan || ''
             });
         });
