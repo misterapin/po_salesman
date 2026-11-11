@@ -1311,15 +1311,16 @@ let currentNotaId = '';
 const NOTA_ROWS_LAST = 12;      // baris item pada lembar terakhir (memuat total + kotak paraf)
 const NOTA_ROWS_LAST_CAT = 10;  // idem, bila ada catatan
 const NOTA_ROWS_MID = 16;       // baris item pada lembar lanjutan (bila item sangat banyak)
-const NOTA_SCALE = 300 / 96;    // unduhan gambar ~300 dpi (A6 = 1748 x 1240 px, A4 = 3508 x 2480 px)
+// Unduhan gambar ~300 dpi (A6 = 1748 x 1240 px, A4 = 3508 x 2480 px), digambar di Canvas (lihat drawNotaSheet)
 
 function fmtNum(n) {
     return Number(n || 0).toLocaleString('id-ID');
 }
 
-// Mengembalikan daftar HTML lembar A6. Satu pesanan = 1 lembar; bila item melebihi
+// Membagi pesanan menjadi model lembar A6. Satu pesanan = 1 lembar; bila item melebihi
 // kapasitas, otomatis bersambung ke lembar berikutnya (total & paraf di lembar terakhir).
-function buildNotaSheets(ord) {
+// Model ini dipakai bersama oleh pratinjau/cetak (HTML) dan unduhan gambar (Canvas).
+function buildNotaModels(ord) {
     const pel = pelangganList.find(c => c.id === ord.pelangganId) || { nama: 'Umum', hp: '', alamat: '-' };
     const items = ord.items || [];
     const catatan = (ord.catatan || '').trim();
@@ -1338,23 +1339,46 @@ function buildNotaSheets(ord) {
     const tgl = new Date(ord.tanggal).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
     const alamat = (pel.alamat && pel.alamat !== '-') ? pel.alamat : '';
     const hp = (pel.hp && pel.hp !== '-') ? pel.hp : '';
-    const alamatLine = [alamat, hp].filter(Boolean).join('  •  ');
-    const bayar = ord.pembayaran || '';
     let no = 0;
 
-    return chunks.map((chunk, idx) => {
-        const isLast = idx === chunks.length - 1;
-        const rows = chunk.map(it => {
-            no++;
-            const nama = esc(it.nama) + (it.varianWarna ? ` <span class="na-var">(${esc(it.varianWarna)})</span>` : '');
-            return `<div class="na-tr"><span class="na-c-no">${no}</span><span class="na-c-nm">${nama}</span>` +
-                `<span class="na-c-q">${esc(String(it.qty))} ${esc(it.satuan || 'Pcs')}</span>` +
-                `<span class="na-c-h">${fmtNum(it.harga)}</span><span class="na-c-s">${fmtNum(it.qty * it.harga)}</span></div>`;
+    return chunks.map((chunk, idx) => ({
+        idx,
+        total: chunks.length,
+        isLast: idx === chunks.length - 1,
+        noNota: ord.noNota,
+        tgl,
+        shop: pel.nama,
+        alamatLine: [alamat, hp].filter(Boolean).join('  \u2022  '),
+        noOrder: ord.noOrder || '',
+        kodeSalesman: ord.kodeSalesman || '',
+        bayar: ord.pembayaran || '',
+        catatan,
+        grand,
+        rows: chunk.map(it => ({
+            no: ++no,
+            nama: String(it.nama || ''),
+            varian: it.varianWarna ? String(it.varianWarna) : '',
+            qty: String(it.qty),
+            satuan: it.satuan || 'Pcs',
+            harga: it.harga,
+            sub: it.qty * it.harga
+        }))
+    }));
+}
+
+// Mengembalikan daftar HTML lembar A6 (untuk pratinjau & cetak).
+function buildNotaSheets(ord) {
+    return buildNotaModels(ord).map(m => {
+        const rows = m.rows.map(r => {
+            const nama = esc(r.nama) + (r.varian ? ` <span class="na-var">(${esc(r.varian)})</span>` : '');
+            return `<div class="na-tr"><span class="na-c-no">${r.no}</span><span class="na-c-nm">${nama}</span>` +
+                `<span class="na-c-q">${esc(r.qty)} ${esc(r.satuan)}</span>` +
+                `<span class="na-c-h">${fmtNum(r.harga)}</span><span class="na-c-s">${fmtNum(r.sub)}</span></div>`;
         }).join('');
 
-        const footer = isLast
-            ? (catatan ? `<div class="na-note"><b>Catatan:</b> ${esc(catatan)}</div>` : '') +
-              `<div class="na-total"><span>TOTAL</span><span>${formatRupiah(grand)}</span></div>` +
+        const footer = m.isLast
+            ? (m.catatan ? `<div class="na-note"><b>Catatan:</b> ${esc(m.catatan)}</div>` : '') +
+              `<div class="na-total"><span>TOTAL</span><span>${formatRupiah(m.grand)}</span></div>` +
               `<div class="na-sign">` +
               ['Salesman', 'Gudang', 'Kacab'].map(n => `<div class="na-sb"><div class="na-sl">${n}</div></div>`).join('') +
               `</div>`
@@ -1362,15 +1386,15 @@ function buildNotaSheets(ord) {
 
         return `<div class="nota-a6">` +
             `<div class="na-head">` +
-              `<div class="na-head-l"><div class="na-shop">${esc(pel.nama)}</div><div class="na-addr">${esc(alamatLine)}</div></div>` +
-              `<div class="na-head-r"><div class="na-title">NOTA PESANAN</div><div class="na-meta">${esc(ord.noNota)} &bull; ${esc(tgl)}</div>` +
-              (chunks.length > 1 ? `<div class="na-meta">Hal ${idx + 1}/${chunks.length}</div>` : '') + `</div>` +
+              `<div class="na-head-l"><div class="na-shop">${esc(m.shop)}</div><div class="na-addr">${esc(m.alamatLine)}</div></div>` +
+              `<div class="na-head-r"><div class="na-title">NOTA PESANAN</div><div class="na-meta">${esc(m.noNota)} &bull; ${esc(m.tgl)}</div>` +
+              (m.total > 1 ? `<div class="na-meta">Hal ${m.idx + 1}/${m.total}</div>` : '') + `</div>` +
             `</div>` +
             `<div class="na-info">` +
-              `<div class="na-f"><span class="na-fl">No. Order</span><span class="na-fv">${esc(ord.noOrder || '')}</span></div>` +
-              `<div class="na-f"><span class="na-fl">Kode Salesman</span><span class="na-fv">${esc(ord.kodeSalesman || '')}</span></div>` +
-              `<div class="na-pay"><span class="na-cb"><i class="na-box">${bayar === 'cash' ? 'X' : ''}</i>Cash</span>` +
-              `<span class="na-cb"><i class="na-box">${bayar === 'tempo' ? 'X' : ''}</i>Tempo</span></div>` +
+              `<div class="na-f"><span class="na-fl">No. Order</span><span class="na-fv">${esc(m.noOrder)}</span></div>` +
+              `<div class="na-f"><span class="na-fl">Kode Salesman</span><span class="na-fv">${esc(m.kodeSalesman)}</span></div>` +
+              `<div class="na-pay"><span class="na-cb"><i class="na-box">${m.bayar === 'cash' ? 'X' : ''}</i>Cash</span>` +
+              `<span class="na-cb"><i class="na-box">${m.bayar === 'tempo' ? 'X' : ''}</i>Tempo</span></div>` +
             `</div>` +
             `<div class="na-tbl">` +
               `<div class="na-tr na-th"><span class="na-c-no">No</span><span class="na-c-nm">Nama Produk</span><span class="na-c-q">Qty</span><span class="na-c-h">Harga</span><span class="na-c-s">Subtotal</span></div>` +
@@ -1396,39 +1420,261 @@ function fitNotaPreview() {
 }
 window.addEventListener('resize', fitNotaPreview);
 
-// Panggung tersembunyi untuk memotret lembar menjadi gambar.
-function makeNotaStage(innerHtml) {
-    const stage = document.createElement('div');
-    stage.className = 'nota-stage';
-    stage.id = 'nota-stage';
-    stage.innerHTML = innerHtml;
-    document.body.appendChild(stage);
-    return stage;
+// ================= UNDUH GAMBAR: digambar langsung di Canvas =================
+// Tidak memotret HTML (html2canvas), jadi posisi teks tidak bergeser/terpotong di browser mana pun.
+// Semua ukuran dalam mm, sama dengan CSS .nota-a6 agar hasilnya setara dengan pratinjau & cetak.
+const NOTA_FONT = 'Arial, Helvetica, "Liberation Sans", sans-serif';
+const PT = 25.4 / 72;   // 1 pt dalam mm
+
+// Teks dipotong dengan "..." bila melebihi lebar.
+function cvFit(ctx, text, maxW) {
+    text = String(text);
+    if (maxW <= 0) return '';
+    if (ctx.measureText(text).width <= maxW) return text;
+    const ell = '\u2026';
+    let lo = 0, hi = text.length;
+    while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (ctx.measureText(text.slice(0, mid).trimEnd() + ell).width <= maxW) lo = mid; else hi = mid - 1;
+    }
+    return lo ? text.slice(0, lo).trimEnd() + ell : ell;
 }
 
-function captureEl(el, width, height) {
-    return html2canvas(el, {
-        scale: NOTA_SCALE,
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        windowWidth: Math.ceil(width) + 40,
-        windowHeight: Math.ceil(height) + 40,
-        onclone: (doc) => {
-            const st = doc.getElementById('nota-stage');
-            if (st) { st.style.left = '0'; st.style.top = '0'; }
-        }
+// Bungkus teks per kata, maksimal maxLines baris (baris terakhir diberi "...").
+function cvWrap(ctx, text, maxW, maxLines) {
+    const words = String(text).split(/\s+/).filter(Boolean);
+    const lines = [];
+    let cur = '';
+    for (let i = 0; i < words.length; i++) {
+        const test = cur ? cur + ' ' + words[i] : words[i];
+        if (ctx.measureText(test).width <= maxW || !cur) { cur = test; continue; }
+        lines.push(cur);
+        cur = words[i];
+        if (lines.length === maxLines - 1) { cur = words.slice(i).join(' '); break; }
+    }
+    if (cur) lines.push(cur);
+    return lines.slice(0, maxLines).map((ln, i, arr) => i === arr.length - 1 ? cvFit(ctx, ln, maxW) : ln);
+}
+
+// Menggambar satu lembar A6 (148 x 105 mm) dengan sudut kiri-atas di (ox, oy) mm; k = piksel per mm.
+function drawNotaSheet(ctx, m, ox, oy, k) {
+    const X = v => (ox + v) * k;     // koordinat mm -> piksel
+    const Y = v => (oy + v) * k;
+    const L = v => v * k;            // panjang mm -> piksel
+    const W = 148, H = 105, PX = 5, PY = 3.5;
+    const x0 = PX, x1 = W - PX, cw = x1 - x0;
+    const ink = '#111';
+
+    const font = (pt, bold, italic) => {
+        ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${(pt * PT * k).toFixed(2)}px ${NOTA_FONT}`;
+        return pt * PT;
+    };
+    // Teks diletakkan pada garis dasar yang dihitung dari tengah kotak baris (bukan dari line-height).
+    const text = (str, x, boxTop, boxH, pt, opt = {}) => {
+        const fs = font(pt, opt.bold, opt.italic);
+        ctx.fillStyle = opt.color || ink;
+        ctx.textAlign = opt.align || 'left';
+        ctx.textBaseline = 'alphabetic';
+        const base = boxTop + boxH / 2 + fs * 0.35;      // tengah tinggi huruf kapital Arial
+        ctx.fillText(str, X(x), Y(base));
+    };
+    const tw = (str, pt, bold, italic) => { font(pt, bold, italic); return ctx.measureText(str).width / k; };
+    const rect = (x, y, w, h, fill) => { ctx.fillStyle = fill; ctx.fillRect(X(x), Y(y), L(w), L(h)); };
+    const frame = (x, y, w, h, lw, color) => {      // garis di DALAM kotak (seperti border-box CSS)
+        ctx.strokeStyle = color; ctx.lineWidth = L(lw);
+        ctx.strokeRect(X(x + lw / 2), Y(y + lw / 2), L(w - lw), L(h - lw));
+    };
+    const hline = (x, y, w, lw, color) => rect(x, y, w, lw, color);
+    // lebar teks dalam mm untuk ukuran/gaya tertentu (dipakai cvFit yang bekerja dalam piksel)
+    const fit = (str, pt, bold, maxWmm) => { font(pt, bold); return cvFit({ measureText: s => ({ width: ctx.measureText(s).width / k }) }, str, maxWmm); };
+
+    // latar putih
+    rect(0, 0, W, H, '#fff');
+
+    // ---- kepala ----
+    const headH = 10.5;
+    const rTitleW = tw('NOTA PESANAN', 9, true) + 0.14 * 12;
+    const rMeta = `${m.noNota} \u2022 ${m.tgl}`;
+    const rightW = Math.max(rTitleW, tw(rMeta, 6.5), m.total > 1 ? tw(`Hal ${m.idx + 1}/${m.total}`, 6.5) : 0);
+    const leftW = cw - rightW - 4;
+    text(fit(m.shop, 10, true, leftW), x0, PY, 4.2, 10, { bold: true });
+    text(fit(m.alamatLine, 6.5, false, leftW), x0, PY + 4.6, 3, 6.5, { color: '#444' });
+    try { ctx.letterSpacing = (0.14 * k).toFixed(2) + 'px'; } catch (e) { /* tidak didukung */ }
+    text('NOTA PESANAN', x1, PY, 4.2, 9, { bold: true, align: 'right' });
+    try { ctx.letterSpacing = '0px'; } catch (e) { /* tidak didukung */ }
+    text(rMeta, x1, PY + 4.3, 3, 6.5, { color: '#333', align: 'right' });
+    if (m.total > 1) text(`Hal ${m.idx + 1}/${m.total}`, x1, PY + 7.4, 3, 6.5, { color: '#333', align: 'right' });
+    hline(x0, PY + headH - 0.3, cw, 0.3, ink);
+
+    // ---- baris info (No. Order, Kode Salesman, Cash/Tempo) ----
+    const infoTop = PY + headH + 1.5, infoBot = infoTop + 5.5;
+    const cbW = t => 3.4 + 1 + tw(t, 7, true);
+    const payW = cbW('Cash') + 3 + cbW('Tempo');
+    const fW = (cw - 6 - payW) / 2;
+    const field = (label, value, fx) => {
+        text(label, fx, infoBot - 3.6, 3.6, 6.5, { bold: true });
+        const lw = tw(label, 6.5, true) + 1;
+        const vx = fx + lw, vw = fW - lw;
+        hline(vx, infoBot - 0.25, vw, 0.25, ink);
+        if (value) text(fit(value, 7, true, vw - 1.6), vx + 0.8, infoBot - 3.8, 3.55, 7, { bold: true });
+    };
+    field('No. Order', m.noOrder, x0);
+    field('Kode Salesman', m.kodeSalesman, x0 + fW + 3);
+    let px = x0 + 2 * fW + 6;
+    const payMid = infoBot - 2.25;
+    [['Cash', 'cash'], ['Tempo', 'tempo']].forEach(([lab, key]) => {
+        frame(px, payMid - 1.7, 3.4, 3.4, 0.3, ink);
+        if (m.bayar === key) text('X', px + 1.7, payMid - 1.7, 3.4, 7, { bold: true, align: 'center' });
+        text(lab, px + 4.4, payMid - 2, 4, 7, { bold: true });
+        px += cbW(lab) + 3;
     });
+
+    // ---- hitung posisi dari bawah ----
+    const bottom = H - PY;
+    const signTop = bottom - 15;
+    let tblBottom;
+    let noteLines = [], noteTop = 0, noteH = 0, totalTop = 0;
+    if (m.isLast) {
+        totalTop = signTop - 1.2 - 4.5;
+        if (m.catatan) {
+            font(6.5);
+            const mctx = { measureText: s => ({ width: ctx.measureText(s).width / k }) };
+            noteLines = cvWrap(mctx, 'Catatan: ' + m.catatan, cw, 2);
+            noteH = Math.min(5.6, noteLines.length * 6.5 * PT * 1.2);
+            noteTop = totalTop - 1 - noteH;
+            tblBottom = noteTop - 1;
+        } else {
+            tblBottom = totalTop - 1;
+        }
+    } else {
+        tblBottom = bottom - 4;
+    }
+
+    // ---- tabel ----
+    const tblTop = infoBot + 1.5, tblH = tblBottom - tblTop;
+    frame(x0, tblTop, cw, tblH, 0.3, ink);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(X(x0 + 0.3), Y(tblTop + 0.3), L(cw - 0.6), L(tblH - 0.6)); ctx.clip();
+    const tx = x0 + 0.3 + 1, tW = cw - 0.6 - 2;
+    const wNo = 6, wQ = 20, wH = 18, wS = 24, gap = 1;
+    const wNm = tW - wNo - wQ - wH - wS - 4 * gap;
+    const cNo = tx, cNm = cNo + wNo + gap, cQ = cNm + wNm + gap, cH = cQ + wQ + gap, cS = cH + wH + gap;
+
+    let ry = tblTop + 0.3;
+    rect(x0 + 0.3, ry, cw - 0.6, 4, '#ececec');
+    hline(x0 + 0.3, ry + 3.7, cw - 0.6, 0.3, ink);
+    text('No', cNo + wNo / 2, ry, 3.7, 6.5, { bold: true, align: 'center' });
+    text('Nama Produk', cNm, ry, 3.7, 6.5, { bold: true });
+    text('Qty', cQ + wQ, ry, 3.7, 6.5, { bold: true, align: 'right' });
+    text('Harga', cH + wH, ry, 3.7, 6.5, { bold: true, align: 'right' });
+    text('Subtotal', cS + wS, ry, 3.7, 6.5, { bold: true, align: 'right' });
+    ry += 4;
+
+    m.rows.forEach(r => {
+        text(String(r.no), cNo + wNo / 2, ry, 4.05, 7, { align: 'center' });
+        // nama produk dipotong "..." bila panjang; varian warna tetap terlihat
+        const varTxt = r.varian ? `(${r.varian})` : '';
+        const varW = varTxt ? tw(varTxt, 6) + 0.9 : 0;
+        const nm = fit(r.nama, 7, false, wNm - varW);
+        text(nm, cNm, ry, 4.05, 7);
+        if (varTxt) {
+            const nmW = tw(nm, 7);
+            text(fit(varTxt, 6, false, Math.max(2, wNm - nmW - 0.9)), cNm + nmW + 0.9, ry, 4.05, 6, { color: '#555' });
+        }
+        text(fit(`${r.qty} ${r.satuan}`, 7, false, wQ), cQ + wQ, ry, 4.05, 7, { align: 'right' });
+        text(fmtNum(r.harga), cH + wH, ry, 4.05, 7, { align: 'right' });
+        text(fmtNum(r.sub), cS + wS, ry, 4.05, 7, { align: 'right' });
+        hline(x0 + 0.3, ry + 4.05, cw - 0.6, 0.15, '#cccccc');
+        ry += 4.2;
+    });
+    ctx.restore();
+
+    // ---- footer ----
+    if (m.isLast) {
+        if (noteLines.length) {
+            const lh = 6.5 * PT * 1.2;
+            noteLines.forEach((ln, i) => {
+                if (i === 0) {
+                    const lab = 'Catatan:';
+                    text(lab, x0, noteTop, lh, 6.5, { bold: true });
+                    const labW = tw(lab, 6.5, true) + tw(' ', 6.5);
+                    text(ln.replace(/^Catatan:\s?/, ''), x0 + labW, noteTop, lh, 6.5);
+                } else {
+                    text(ln, x0, noteTop + i * lh, lh, 6.5);
+                }
+            });
+        }
+        text('TOTAL', x0, totalTop, 4.5, 8.5, { bold: true });
+        text(formatRupiah(m.grand), x1, totalTop, 4.5, 8.5, { bold: true, align: 'right' });
+
+        const bw = (cw - 4) / 3;
+        ['Salesman', 'Gudang', 'Kacab'].forEach((n, i) => {
+            const bx = x0 + i * (bw + 2);
+            rect(bx + 0.3, signTop + 0.3, bw - 0.6, 3.8, '#f1f1f1');
+            hline(bx + 0.3, signTop + 0.3 + 3.8 - 0.2, bw - 0.6, 0.2, '#888888');
+            frame(bx, signTop, bw, 15, 0.3, ink);
+            text(n, bx + bw / 2, signTop + 0.3, 3.4, 6.5, { bold: true, align: 'center' });
+        });
+    } else {
+        text('bersambung ke halaman berikutnya \u2192', x1, tblBottom + 1, 3, 6.5, { italic: true, color: '#444', align: 'right' });
+    }
+}
+
+function newCanvas(wMm, hMm, k) {
+    const c = document.createElement('canvas');
+    c.width = Math.round(wMm * k);
+    c.height = Math.round(hMm * k);
+    return c;
+}
+
+// Satu lembar A6 -> canvas (~300 dpi: 1748 x 1240 px)
+function renderNotaCanvas(model) {
+    const k = 300 / 25.4;
+    const c = newCanvas(148, 105, k);
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    drawNotaSheet(ctx, model, 0, 0, k);
+    return c;
+}
+
+// Satu halaman A4 landscape (297 x 210 mm) berisi maksimal 4 lembar A6 (2 x 2) -> canvas (3508 x 2480 px)
+function renderA4Canvas(models) {
+    const k = 300 / 25.4;
+    const c = newCanvas(297, 210, k);
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    models.forEach((m, i) => {
+        const cx = (i % 2) * 148.5, cy = Math.floor(i / 2) * 105;
+        drawNotaSheet(ctx, m, cx, cy, k);
+        ctx.save();
+        ctx.setLineDash([0.8 * k, 0.5 * k]);
+        ctx.strokeStyle = '#b5b5b5';
+        ctx.lineWidth = 0.2 * k;
+        ctx.strokeRect(cx * k + 0.1 * k, cy * k + 0.1 * k, 148.5 * k - 0.2 * k, 105 * k - 0.2 * k);
+        ctx.restore();
+    });
+    return c;
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function saveCanvas(canvas, filename) {
-    const a = document.createElement('a');
-    a.download = filename;
-    a.href = canvas.toDataURL('image/png');
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    return new Promise((resolve, reject) => {
+        canvas.toBlob(blob => {
+            if (!blob) { reject(new Error('Gambar gagal dibuat.')); return; }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.download = filename;
+            a.href = url;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+            resolve();
+        }, 'image/png');
+    });
 }
 
 let notaBusy = false;
@@ -1437,23 +1683,20 @@ async function downloadInvoiceImage() {
     if (notaBusy) return;
     const ord = pesananList.find(o => o.id === currentNotaId);
     if (!ord) return;
-    if (typeof html2canvas === 'undefined') { alert('Library gambar belum termuat. Periksa koneksi internet lalu muat ulang halaman.'); return; }
 
     notaBusy = true;
-    const sheets = buildNotaSheets(ord);
-    const stage = makeNotaStage(sheets.map(sh => `<div class="nota-stage-item">${sh}</div>`).join(''));
     try {
-        const els = stage.querySelectorAll('.nota-a6');
-        for (let i = 0; i < els.length; i++) {
-            const canvas = await captureEl(els[i], els[i].offsetWidth, els[i].offsetHeight);
-            const suffix = els.length > 1 ? `_hal${i + 1}` : '';
-            saveCanvas(canvas, `Nota_${currentNotaNo || 'Pesanan'}${suffix}.png`);
-            if (i < els.length - 1) await sleep(400);
+        if (document.fonts && document.fonts.ready) await document.fonts.ready;
+        const models = buildNotaModels(ord);
+        for (let i = 0; i < models.length; i++) {
+            const canvas = renderNotaCanvas(models[i]);
+            const suffix = models.length > 1 ? `_hal${i + 1}` : '';
+            await saveCanvas(canvas, `Nota_${currentNotaNo || 'Pesanan'}${suffix}.png`);
+            if (i < models.length - 1) await sleep(400);
         }
     } catch (err) {
         alert('Gagal mengunduh gambar nota: ' + err.message);
     } finally {
-        stage.remove();
         notaBusy = false;
     }
 }
@@ -1492,29 +1735,25 @@ async function exportLaporanImageA4() {
         alert('Tidak ada data pesanan pada periode ini untuk diunduh!');
         return;
     }
-    if (typeof html2canvas === 'undefined') { alert('Library gambar belum termuat. Periksa koneksi internet lalu muat ulang halaman.'); return; }
 
-    const sheets = [];
-    filtered.forEach(ord => buildNotaSheets(ord).forEach(sh => sheets.push(sh)));
+    const models = [];
+    filtered.forEach(ord => buildNotaModels(ord).forEach(m => models.push(m)));
     const pages = [];
-    for (let i = 0; i < sheets.length; i += 4) pages.push(sheets.slice(i, i + 4));
+    for (let i = 0; i < models.length; i += 4) pages.push(models.slice(i, i + 4));
 
     notaBusy = true;
-    const stage = makeNotaStage(pages.map(p =>
-        `<div class="a4-page">${p.map(sh => `<div class="a4-cell">${sh}</div>`).join('')}</div>`).join(''));
     try {
-        const els = stage.querySelectorAll('.a4-page');
-        for (let i = 0; i < els.length; i++) {
-            const canvas = await captureEl(els[i], els[i].offsetWidth, els[i].offsetHeight);
-            const suffix = els.length > 1 ? `_hal${i + 1}-dari-${els.length}` : '';
-            saveCanvas(canvas, `Rekap_Pesanan_A4_${getLaporanFileSuffix()}${suffix}.png`);
-            if (i < els.length - 1) await sleep(500);
+        if (document.fonts && document.fonts.ready) await document.fonts.ready;
+        for (let i = 0; i < pages.length; i++) {
+            const canvas = renderA4Canvas(pages[i]);
+            const suffix = pages.length > 1 ? `_hal${i + 1}-dari-${pages.length}` : '';
+            await saveCanvas(canvas, `Rekap_Pesanan_A4_${getLaporanFileSuffix()}${suffix}.png`);
+            if (i < pages.length - 1) await sleep(500);
         }
-        if (els.length > 1) alert(`${els.length} file gambar A4 telah diunduh (masing-masing berisi maksimal 4 form).`);
+        if (pages.length > 1) alert(`${pages.length} file gambar A4 telah diunduh (masing-masing berisi maksimal 4 form).`);
     } catch (err) {
         alert('Gagal mengunduh rekap A4: ' + err.message);
     } finally {
-        stage.remove();
         notaBusy = false;
     }
 }
