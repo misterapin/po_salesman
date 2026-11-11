@@ -1308,6 +1308,7 @@ function closeModalWhatsapp() {
 // ================= UNDUH GAMBAR A4 REKAP SEMUA PESANAN =================
 // ================= NOTA A6 LANDSCAPE (148 x 105 mm) =================
 let currentNotaId = '';
+const NOTA_TITLE = 'CV Mitra Sejahtera';   // judul pada lembar nota (tanpa nomor nota)
 const NOTA_ROWS_LAST = 12;      // baris item pada lembar terakhir (memuat total + kotak paraf)
 const NOTA_ROWS_LAST_CAT = 10;  // idem, bila ada catatan
 const NOTA_ROWS_MID = 16;       // baris item pada lembar lanjutan (bila item sangat banyak)
@@ -1387,7 +1388,7 @@ function buildNotaSheets(ord) {
         return `<div class="nota-a6">` +
             `<div class="na-head">` +
               `<div class="na-head-l"><div class="na-shop">${esc(m.shop)}</div><div class="na-addr">${esc(m.alamatLine)}</div></div>` +
-              `<div class="na-head-r"><div class="na-title">NOTA PESANAN</div><div class="na-meta">${esc(m.noNota)} &bull; ${esc(m.tgl)}</div>` +
+              `<div class="na-head-r"><div class="na-title">${esc(NOTA_TITLE)}</div><div class="na-meta">${esc(m.tgl)}</div>` +
               (m.total > 1 ? `<div class="na-meta">Hal ${m.idx + 1}/${m.total}</div>` : '') + `</div>` +
             `</div>` +
             `<div class="na-info">` +
@@ -1493,14 +1494,14 @@ function drawNotaSheet(ctx, m, ox, oy, k) {
 
     // ---- kepala ----
     const headH = 10.5;
-    const rTitleW = tw('NOTA PESANAN', 9, true) + 0.14 * 12;
-    const rMeta = `${m.noNota} \u2022 ${m.tgl}`;
+    const rTitleW = tw(NOTA_TITLE, 9, true) + 0.14 * NOTA_TITLE.length;
+    const rMeta = m.tgl;
     const rightW = Math.max(rTitleW, tw(rMeta, 6.5), m.total > 1 ? tw(`Hal ${m.idx + 1}/${m.total}`, 6.5) : 0);
     const leftW = cw - rightW - 4;
     text(fit(m.shop, 10, true, leftW), x0, PY, 4.2, 10, { bold: true });
     text(fit(m.alamatLine, 6.5, false, leftW), x0, PY + 4.6, 3, 6.5, { color: '#444' });
     try { ctx.letterSpacing = (0.14 * k).toFixed(2) + 'px'; } catch (e) { /* tidak didukung */ }
-    text('NOTA PESANAN', x1, PY, 4.2, 9, { bold: true, align: 'right' });
+    text(NOTA_TITLE, x1, PY, 4.2, 9, { bold: true, align: 'right' });
     try { ctx.letterSpacing = '0px'; } catch (e) { /* tidak didukung */ }
     text(rMeta, x1, PY + 4.3, 3, 6.5, { color: '#333', align: 'right' });
     if (m.total > 1) text(`Hal ${m.idx + 1}/${m.total}`, x1, PY + 7.4, 3, 6.5, { color: '#333', align: 'right' });
