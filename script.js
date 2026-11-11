@@ -1001,10 +1001,16 @@ function addItemRow(existingData = null) {
     const existingProd = produkList.find(p => p.id === existingProdId);
     const existingProdName = existingProd ? existingProd.nama : (existingData ? existingData.nama : '');
     const existingVarian = existingData ? (existingData.varianWarna || '') : '';
+    // Harga yang tersimpan di pesanan dipakai apa adanya (bisa berbeda dari harga master)
+    const hargaVal = existingData ? (existingData.harga ?? (existingProd ? existingProd.harga : '')) : '';
 
     const rowDiv = document.createElement('div');
     rowDiv.id = rowId;
     rowDiv.className = 'bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2';
+    if (existingData) {
+        rowDiv.dataset.fbNama = existingData.nama || '';
+        rowDiv.dataset.fbSatuan = existingData.satuan || '';
+    }
     rowDiv.innerHTML = `
         <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 relative">
             <div class="relative w-full sm:w-auto sm:flex-1 sm:min-w-0">
@@ -1015,11 +1021,15 @@ function addItemRow(existingData = null) {
             <div class="w-20">
                 <input type="number" min="1" value="${qtyVal}" onchange="calculateTotalPesanan()" oninput="calculateTotalPesanan()" class="item-qty w-full text-xs border border-gray-200 rounded-lg p-2 text-center bg-white focus:outline-none focus:ring-2 focus:ring-primary" placeholder="Qty">
             </div>
+            <div class="w-28" title="Harga satuan (bisa diedit)">
+                <input type="number" min="0" step="any" inputmode="decimal" value="${esc(hargaVal)}" oninput="calculateTotalPesanan()" onchange="calculateTotalPesanan()" class="item-harga w-full text-xs border border-gray-200 rounded-lg p-2 text-right bg-white focus:outline-none focus:ring-2 focus:ring-primary" placeholder="Harga">
+            </div>
             <div class="flex-1 sm:flex-none sm:w-28 text-right font-bold text-sm sm:text-xs text-emerald-600 item-subtotal">
                 Rp 0
             </div>
             <button type="button" onclick="document.getElementById('${rowId}').remove(); calculateTotalPesanan();" class="text-red-500 hover:text-red-700 w-9 h-9 sm:w-auto sm:h-auto sm:p-1 text-sm flex items-center justify-center" aria-label="Hapus baris"><i class="fa-solid fa-trash"></i></button>
         </div>
+        <div class="harga-hint hidden text-[11px] text-amber-600"></div>
         <div class="varian-container hidden relative">
             <label class="block text-[10px] font-semibold text-gray-500 uppercase mb-1">Varian / Kode Warna Cat Semprot</label>
             <input type="text" oninput="onVarianInput('${rowId}')" onfocus="onVarianInput('${rowId}')" autocomplete="off" placeholder="Ketik atau pilih kode/nama warna (misal: 139 BLACK)..." class="varian-search-input w-full text-xs border border-gray-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary" value="${esc(existingVarian)}">
@@ -1069,7 +1079,7 @@ function onProductInput(rowId) {
                 idVal.value = p.id;
                 input.value = p.nama;
                 listDiv.classList.add('hidden');
-                checkVarianAndSubtotal(rowId, p);
+                checkVarianAndSubtotal(rowId, p, '', true);
             };
             listDiv.appendChild(item);
         });
@@ -1080,18 +1090,16 @@ function onProductInput(rowId) {
     }
 }
 
-function checkVarianAndSubtotal(rowId, prod, selectedVarian = '') {
+function checkVarianAndSubtotal(rowId, prod, selectedVarian = '', resetHarga = false) {
     const row = document.getElementById(rowId);
     if (!row) return;
-    const qtyInput = row.querySelector('.item-qty');
     const subtotalDiv = row.querySelector('.item-subtotal');
     const varianContainer = row.querySelector('.varian-container');
     const varianInput = row.querySelector('.varian-search-input');
 
     if (prod) {
-        const qty = parseFloat(qtyInput.value) || 0;
-        const sub = qty * prod.harga;
-        subtotalDiv.innerText = formatRupiah(sub);
+        // Produk baru dipilih -> harga diisi dengan harga master (tetap bisa diedit)
+        if (resetHarga) row.querySelector('.item-harga').value = prod.harga;
 
         const isCatSemprot = (prod.nama && prod.nama.toLowerCase().includes('cat semprot')) ||
                              (prod.kategori && prod.kategori.toLowerCase().includes('cat semprot'));
@@ -1150,15 +1158,26 @@ function calculateTotalPesanan() {
         const qtyInput = row.querySelector('.item-qty');
         const subtotalDiv = row.querySelector('.item-subtotal');
 
+        const hargaInput = row.querySelector('.item-harga');
+        const hint = row.querySelector('.harga-hint');
+
         const prodId = idVal.value;
         const prod = produkList.find(p => p.id === prodId);
-        if (prod) {
+        if (prodId) {
             const qty = parseFloat(qtyInput.value) || 0;
-            const sub = qty * prod.harga;
+            const harga = parseFloat(hargaInput.value) || 0;
+            const sub = qty * harga;
             subtotalDiv.innerText = formatRupiah(sub);
             total += sub;
+            if (prod && hargaInput.value !== '' && harga !== prod.harga) {
+                hint.innerText = `Harga diubah dari harga normal ${formatRupiah(prod.harga)} / ${prod.satuan}`;
+                hint.classList.remove('hidden');
+            } else {
+                hint.classList.add('hidden');
+            }
         } else {
             subtotalDiv.innerText = formatRupiah(0);
+            hint.classList.add('hidden');
         }
     });
     document.getElementById('pesanan-total-display').innerText = formatRupiah(total);
@@ -1177,27 +1196,36 @@ async function savePesanan() {
 
     const rows = document.querySelectorAll('#items-container > div');
     let items = [];
+    let hargaInvalid = false;
 
     rows.forEach(row => {
         const idVal = row.querySelector('.product-id-val');
         const qtyInput = row.querySelector('.item-qty');
+        const hargaInput = row.querySelector('.item-harga');
         const varianInput = row.querySelector('.varian-search-input');
         const prodId = idVal.value;
         const qty = parseFloat(qtyInput.value) || 0;
+        const harga = parseFloat(hargaInput.value);
         const varianWarna = varianInput ? varianInput.value.trim() : '';
 
         if (prodId && qty > 0) {
+            if (!(harga > 0)) { hargaInvalid = true; return; }
             const prod = produkList.find(p => p.id === prodId);
             items.push({
                 produkId: prodId,
-                nama: prod.nama,
-                satuan: prod.satuan,
+                nama: prod ? prod.nama : (row.dataset.fbNama || ''),
+                satuan: prod ? prod.satuan : (row.dataset.fbSatuan || 'PCS'),
                 qty: qty,
-                harga: prod.harga,
+                harga: harga,
                 varianWarna: varianWarna
             });
         }
     });
+
+    if (hargaInvalid) {
+        alert('Harga satuan pada setiap produk harus diisi dan lebih dari 0!');
+        return;
+    }
 
     if (!pelangganId || items.length === 0) {
         alert('Pilih toko pelanggan yang valid dari daftar pencarian dan pastikan minimal ada 1 produk pesanan!');
