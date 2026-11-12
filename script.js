@@ -112,7 +112,7 @@ const TABLE_MAP = {
             });
             return row;
         },
-        from: (r) => ({ id: r.id, noNota: r.no_nota, tanggal: r.tanggal, pelangganId: r.pelanggan_id, items: r.items || [], catatan: r.catatan || '', noOrder: r.no_order || '', kodeSalesman: r.kode_salesman || '', pembayaran: r.pembayaran || '' })
+        from: (r) => ({ id: r.id, noNota: r.no_nota, tanggal: r.tanggal, pelangganId: r.pelanggan_id, items: r.items || [], catatan: r.catatan || '', noOrder: r.no_order || '', kodeSalesman: r.kode_salesman || '', pembayaran: r.pembayaran || '', ownerId: r.owner_id || '' })
     }
 };
 
@@ -252,10 +252,11 @@ async function fetchProfile(userId) {
 }
 
 async function loadUsers() {
-    if (!can('users.manage')) { userList = []; return; }
+    if (!can('users.manage')) { userList = []; fillUserFilters(); return; }
     const { data, error } = await sb.from('profiles').select('id, username, nama, role, default_pw').order('created_at');
     if (error) throw error;
     userList = data.map(mapProfile);
+    fillUserFilters();
 }
 
 async function handleLogin(e) {
@@ -554,17 +555,43 @@ let produkList = [];
 let pelangganList = [];
 let pesananList = [];
 
-// Nomor nota: NOTA-YYYYMMDD-NNN (urut per hari, memakai tanggal lokal)
+// Kode pengguna untuk nomor nota: username dalam huruf besar, hanya A-Z dan 0-9 (mis. budi -> BUDI).
+function kodePengguna(username) {
+    return String(username || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'USER';
+}
+
+// Nomor nota: NOTA-YYYYMMDD-KODE-NNN (urut per hari per pengguna, memakai tanggal lokal)
 function generateNoNota() {
-    const prefix = 'NOTA-' + toLocalDateStr(new Date()).replace(/-/g, '') + '-';
+    const kode = kodePengguna(currentUser && currentUser.username);
+    const prefix = 'NOTA-' + toLocalDateStr(new Date()).replace(/-/g, '') + '-' + kode + '-';
     let max = 0;
     pesananList.forEach(o => {
         if (o.noNota && o.noNota.startsWith(prefix)) {
-            const n = parseInt(o.noNota.slice(prefix.length), 10);
+            const rest = o.noNota.slice(prefix.length);
+            if (!/^\d+$/.test(rest)) return;   // abaikan kode lain yang diawali sama (mis. BUDI vs BUDI2)
+            const n = parseInt(rest, 10);
             if (n > max) max = n;
         }
     });
     return prefix + String(max + 1).padStart(3, '0');
+}
+
+// ================= FILTER PER PENGGUNA (Admin) =================
+// Nilai '' = semua pengguna. Kasir tidak punya dropdown ini (RLS sudah membatasi datanya).
+function userLabel(id) {
+    const u = userList.find(x => x.id === id);
+    return u ? (u.nama || u.username) : '';
+}
+
+function fillUserFilters() {
+    ['filter-pengguna', 'laporan-pengguna'].forEach(elId => {
+        const el = byId(elId);
+        if (!el) return;
+        const cur = el.value;
+        el.innerHTML = '<option value="">Semua pengguna</option>' + userList.map(u =>
+            `<option value="${esc(u.id)}">${esc(u.nama || u.username)} (${esc(u.username)})</option>`).join('');
+        el.value = userList.some(u => u.id === cur) ? cur : '';
+    });
 }
 
 function updateClock() {
@@ -816,6 +843,7 @@ async function deletePelanggan(id) {
 function renderPesanan() {
     const keyword = document.getElementById('search-pesanan').value.toLowerCase();
     const filterDate = document.getElementById('filter-tanggal').value;
+    const filterUser = can('users.manage') ? (byId('filter-pengguna').value || '') : '';
     const tbody = document.getElementById('table-pesanan-body');
     tbody.innerHTML = '';
 
@@ -838,7 +866,9 @@ function renderPesanan() {
         const ordDate = toLocalDateStr(ord.tanggal);
         const matchDate = filterDate ? ordDate === filterDate : (ordDate >= bulan.dari && ordDate <= bulan.sampai);
 
-        return matchKeyword && matchDate;
+        const matchUser = !filterUser || ord.ownerId === filterUser;
+
+        return matchKeyword && matchDate && matchUser;
     });
 
     if (filtered.length === 0) {
@@ -872,6 +902,7 @@ function renderPesanan() {
 function resetFilterPesanan() {
     document.getElementById('search-pesanan').value = '';
     document.getElementById('filter-tanggal').value = '';
+    if (byId('filter-pengguna')) byId('filter-pengguna').value = '';
     renderPesanan();
 }
 
@@ -1852,8 +1883,10 @@ function getLaporanRange() {
 // Filter berdasarkan TANGGAL PESANAN (tanggal lokal), lalu urut dari yang paling awal.
 function getLaporanFiltered() {
     const { dari, sampai } = getLaporanRange();
+    const filterUser = getLaporanUser();
     return pesananList
         .filter(ord => {
+            if (filterUser && ord.ownerId !== filterUser) return false;
             const d = toLocalDateStr(ord.tanggal);
             if (!d) return false;
             if (dari && d < dari) return false;
@@ -1868,16 +1901,27 @@ function formatTanggalIndo(str) {
     return new Date(y, m - 1, d).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
+function getLaporanUser() {
+    return can('users.manage') && byId('laporan-pengguna') ? (byId('laporan-pengguna').value || '') : '';
+}
+
 function getLaporanLabel() {
     const { dari, sampai } = getLaporanRange();
-    if (dari && sampai) return dari === sampai ? formatTanggalIndo(dari) : `${formatTanggalIndo(dari)} - ${formatTanggalIndo(sampai)}`;
-    return dari ? `Mulai ${formatTanggalIndo(dari)}` : `Sampai ${formatTanggalIndo(sampai)}`;
+    let t;
+    if (dari && sampai) t = dari === sampai ? formatTanggalIndo(dari) : `${formatTanggalIndo(dari)} - ${formatTanggalIndo(sampai)}`;
+    else t = dari ? `Mulai ${formatTanggalIndo(dari)}` : `Sampai ${formatTanggalIndo(sampai)}`;
+    const uid = getLaporanUser();
+    return uid ? `${t} \u2022 ${userLabel(uid)}` : t;
 }
 
 function getLaporanFileSuffix() {
     const { dari, sampai } = getLaporanRange();
-    if (dari && sampai) return dari === sampai ? dari : `${dari}_sd_${sampai}`;
-    return dari ? `mulai_${dari}` : `sampai_${sampai}`;
+    let t;
+    if (dari && sampai) t = dari === sampai ? dari : `${dari}_sd_${sampai}`;
+    else t = dari ? `mulai_${dari}` : `sampai_${sampai}`;
+    const uid = getLaporanUser();
+    const u = uid ? userList.find(x => x.id === uid) : null;
+    return u ? `${t}_${kodePengguna(u.username)}` : t;
 }
 
 function setLaporanHariIni() {
@@ -1950,6 +1994,7 @@ function exportExcelLaporan() {
         ord.items.forEach(item => {
             dataToExport.push({
                 'No Nota': ord.noNota,
+                'Pengguna': userLabel(ord.ownerId),
                 'Tanggal': toLocalDateStr(ord.tanggal),
                 'Waktu': waktu,
                 'Pelanggan': pel.nama,

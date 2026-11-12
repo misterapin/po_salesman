@@ -180,6 +180,9 @@
                     <input type="text" id="search-pesanan" oninput="renderPesanan()" placeholder="Cari nama pelanggan / no nota..." class="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
                 </div>
                 <div class="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                    <select data-perm="users.manage" id="filter-pengguna" onchange="renderPesanan()" aria-label="Filter pengguna" class="hidden flex-1 min-w-0 sm:flex-none text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary bg-white">
+                        <option value="">Semua pengguna</option>
+                    </select>
                     <label class="text-sm text-gray-600 whitespace-nowrap">Filter Tanggal:</label>
                     <input type="date" id="filter-tanggal" onchange="renderPesanan()" class="flex-1 min-w-0 sm:flex-none text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
                     <button onclick="resetFilterPesanan()" class="text-sm text-gray-500 hover:text-gray-700 underline px-2 py-2">Reset</button>
@@ -311,6 +314,12 @@
                     <div class="min-w-0">
                         <label for="laporan-sampai" class="block text-xs font-medium text-gray-600 mb-1">Sampai Tanggal</label>
                         <input type="date" id="laporan-sampai" onchange="laporanTanggalDiubah()" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
+                    </div>
+                    <div data-perm="users.manage" class="hidden min-w-0 col-span-2 sm:col-span-1">
+                        <label for="laporan-pengguna" class="block text-xs font-medium text-gray-600 mb-1">Pengguna</label>
+                        <select id="laporan-pengguna" onchange="renderLaporan()" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary bg-white">
+                            <option value="">Semua pengguna</option>
+                        </select>
                     </div>
                     <div class="flex gap-2 col-span-2 sm:col-span-1">
                         <button onclick="setLaporanHariIni()" class="flex-1 sm:flex-none px-3 py-2 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-100 transition">Hari Ini</button>
