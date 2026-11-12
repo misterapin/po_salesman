@@ -1,7 +1,7 @@
 // Service worker PO Salesman: syarat agar bisa dipasang sebagai aplikasi.
 // Strategi: jaringan dulu (data & kode selalu terbaru); cache hanya cadangan
 // tampilan dasar bila sedang tidak ada internet. API dan Supabase TIDAK pernah di-cache.
-const CACHE = 'po-salesman-v1';
+const CACHE = 'po-salesman-v2';
 const SHELL = ['/', '/index.html', '/style.css', '/script.js', '/config.js', '/manifest.json', '/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
