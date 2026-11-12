@@ -167,7 +167,6 @@ async function loadAllData() {
     produkList = p;
     pelangganList = c;
     pesananList = o;
-    updateCounts();
 }
 
 async function reloadPesanan() {
@@ -328,7 +327,6 @@ async function enterApp(user) {
         (user.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700');
 
     applyRole();
-    updateCounts();
     switchTab('pesanan');
 }
 
@@ -569,11 +567,6 @@ function generateNoNota() {
     return prefix + String(max + 1).padStart(3, '0');
 }
 
-function updateCounts() {
-    document.getElementById('count-produk').innerText = produkList.length;
-    document.getElementById('count-pelanggan').innerText = pelangganList.length;
-}
-
 function updateClock() {
     const now = new Date();
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
@@ -694,7 +687,6 @@ async function saveProduk() {
     const idx = produkList.findIndex(p => p.id === row.id);
     if (idx !== -1) produkList[idx] = row; else produkList.unshift(row);
 
-    updateCounts();
     closeModalProduk();
     renderProduk();
 }
@@ -717,7 +709,6 @@ async function deleteProduk(id) {
         return dbFail(err, 'menghapus produk');
     }
     produkList = produkList.filter(p => p.id !== id);
-    updateCounts();
     renderProduk();
 }
 
@@ -796,7 +787,6 @@ async function savePelanggan() {
     const idx = pelangganList.findIndex(c => c.id === row.id);
     if (idx !== -1) pelangganList[idx] = row; else pelangganList.unshift(row);
 
-    updateCounts();
     closeModalPelanggan();
     renderPelanggan();
 }
@@ -819,7 +809,6 @@ async function deletePelanggan(id) {
         return dbFail(err, 'menghapus pelanggan');
     }
     pelangganList = pelangganList.filter(c => c.id !== id);
-    updateCounts();
     renderPelanggan();
 }
 
@@ -1295,54 +1284,13 @@ async function deletePesanan(id) {
 }
 
 // ================= PREVIEW, UNDUH GAMBAR & WHATSAPP =================
-let currentWhatsappPhone = '';
 let currentNotaNo = '';
 
 function previewWhatsapp(id) {
     const ord = pesananList.find(o => o.id === id);
     if (!ord) return;
-    const pel = pelangganList.find(c => c.id === ord.pelangganId) || { nama: 'Umum', hp: '-', alamat: '-' };
-    currentWhatsappPhone = pel.hp || '';
     currentNotaNo = ord.noNota;
     currentNotaId = ord.id;
-
-    const dateObj = new Date(ord.tanggal);
-    const formattedDate = dateObj.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
-
-    let grandTotal = 0;
-    let textWa = `📦 *NOTA PESANAN* 📦\n`;
-    textWa += `----------------------------------------\n`;
-    textWa += `No. Nota     : *${ord.noNota}*\n`;
-    if (ord.noOrder) textWa += `No. Order    : *${ord.noOrder}*\n`;
-    if (ord.kodeSalesman) textWa += `Kode Salesman: ${ord.kodeSalesman}\n`;
-    if (ord.pembayaran) textWa += `Pembayaran   : *${ord.pembayaran.toUpperCase()}*\n`;
-    textWa += `Tanggal      : ${formattedDate}\n`;
-    textWa += `Toko/Pemesan : *${pel.nama}*\n`;
-    textWa += `Alamat       : ${pel.alamat || '-'}\n`;
-    textWa += `No. WhatsApp : ${pel.hp || '-'}\n`;
-    textWa += `----------------------------------------\n`;
-    textWa += `*DETAIL PRODUK:*\n`;
-
-    ord.items.forEach((item, idx) => {
-        const sub = item.qty * item.harga;
-        grandTotal += sub;
-        textWa += `${idx + 1}. ${item.nama}\n`;
-        if (item.varianWarna) {
-            textWa += `   🎨 Varian Warna: *${item.varianWarna}*\n`;
-        }
-        textWa += `   ${item.qty} ${item.satuan || 'Pcs'} x ${formatRupiah(item.harga)} = *${formatRupiah(sub)}*\n`;
-    });
-
-    if (ord.catatan) {
-        textWa += `----------------------------------------\n`;
-        textWa += `📝 *Catatan:*\n${ord.catatan}\n`;
-    }
-
-    textWa += `----------------------------------------\n`;
-    textWa += `*TOTAL KESELURUHAN: ${formatRupiah(grandTotal)}*\n`;
-    textWa += `----------------------------------------`;
-
-    document.getElementById('whatsapp-text-area').value = textWa;
 
     // Pratinjau lembar nota A6 landscape
     document.getElementById('inv-sheets').innerHTML = buildNotaSheets(ord)
@@ -1876,33 +1824,6 @@ async function exportLaporanPdfA4() {
     } finally {
         notaBusy = false;
     }
-}
-
-function copyWhatsappText() {
-    const textarea = document.getElementById('whatsapp-text-area');
-    textarea.select();
-    document.execCommand('copy');
-    alert('Teks nota berhasil disalin ke clipboard!');
-}
-
-function sendToWhatsappFinal() {
-    const text = document.getElementById('whatsapp-text-area').value;
-    let cleanPhone = (currentWhatsappPhone || '').replace(/[^0-9]/g, '');
-    if (cleanPhone.startsWith('0')) {
-        cleanPhone = '62' + cleanPhone.substring(1);
-    }
-    const encoded = encodeURIComponent(text);
-    if (!cleanPhone) {
-        const manualPhone = prompt('Nomor WhatsApp pelanggan belum terdaftar. Masukkan nomor WhatsApp (contoh: 08123456789):');
-        if (!manualPhone) {
-            window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
-            return;
-        }
-        cleanPhone = manualPhone.replace(/[^0-9]/g, '');
-        if (cleanPhone.startsWith('0')) cleanPhone = '62' + cleanPhone.substring(1);
-    }
-    const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encoded}`;
-    window.open(waUrl, '_blank');
 }
 
 // ================= LAPORAN & REKAP =================
