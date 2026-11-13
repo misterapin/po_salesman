@@ -202,9 +202,9 @@ async function callUsersApi(method, body) {
 // Ubah daftar izin di sini bila ingin menyesuaikan hak akses tiap role.
 const ROLE_PERMISSIONS = {
     admin: ['produk.write', 'pelanggan.write', 'pelanggan.delete', 'pesanan.write', 'pesanan.delete', 'backup', 'users.manage'],
-    kasir: ['pesanan.write', 'pelanggan.write']
+    salesman: ['pesanan.write', 'pelanggan.write']
 };
-const ROLE_LABEL = { admin: 'Admin', kasir: 'Kasir' };
+const ROLE_LABEL = { admin: 'Admin', salesman: 'salesman' };
 
 let userList = [];
 let currentUser = null;
@@ -477,7 +477,7 @@ function openModalPengguna(id = null) {
     byId('pengguna-id').value = u ? u.id : '';
     byId('pengguna-username').value = u ? u.username : '';
     byId('pengguna-nama').value = u ? u.nama : '';
-    byId('pengguna-role').value = u ? u.role : 'kasir';
+    byId('pengguna-role').value = u ? u.role : 'salesman';
     byId('pengguna-role').disabled = !!(u && currentUser && u.id === currentUser.id);
     byId('pengguna-password').value = '';
     byId('pengguna-pw-hint').innerText = u ? 'Kosongkan jika tidak ingin mengubah password.' : 'Minimal 6 karakter.';
@@ -577,7 +577,7 @@ function generateNoNota() {
 }
 
 // ================= FILTER PER PENGGUNA (Admin) =================
-// Nilai '' = semua pengguna. Kasir tidak punya dropdown ini (RLS sudah membatasi datanya).
+// Nilai '' = semua pengguna. salesman tidak punya dropdown ini (RLS sudah membatasi datanya).
 function userLabel(id) {
     const u = userList.find(x => x.id === id);
     return u ? (u.nama || u.username) : '';
