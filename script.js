@@ -204,7 +204,7 @@ const ROLE_PERMISSIONS = {
     admin: ['produk.write', 'pelanggan.write', 'pelanggan.delete', 'pesanan.write', 'pesanan.delete', 'backup', 'users.manage'],
     salesman: ['pesanan.write', 'pelanggan.write']
 };
-const ROLE_LABEL = { admin: 'Admin', salesman: 'salesman' };
+const ROLE_LABEL = { admin: 'Admin', salesman: 'Salesman' };
 
 let userList = [];
 let currentUser = null;
@@ -577,7 +577,7 @@ function generateNoNota() {
 }
 
 // ================= FILTER PER PENGGUNA (Admin) =================
-// Nilai '' = semua pengguna. salesman tidak punya dropdown ini (RLS sudah membatasi datanya).
+// Nilai '' = semua pengguna. Salesman tidak punya dropdown ini (RLS sudah membatasi datanya).
 function userLabel(id) {
     const u = userList.find(x => x.id === id);
     return u ? (u.nama || u.username) : '';
