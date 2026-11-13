@@ -70,7 +70,7 @@ function validate(body, { needPassword }) {
     const password = body.password ? String(body.password) : '';
     if (!/^[A-Za-z0-9_.-]{3,20}$/.test(username)) throw new HttpError(400, 'Username 3-20 karakter: huruf, angka, titik, strip, atau underscore.');
     if (!nama) throw new HttpError(400, 'Nama lengkap wajib diisi.');
-    if (!['admin', 'kasir'].includes(role)) throw new HttpError(400, 'Role tidak valid.');
+    if (!['admin', 'salesman'].includes(role)) throw new HttpError(400, 'Role tidak valid.');
     if ((needPassword || password) && password.length < 6) throw new HttpError(400, 'Password minimal 6 karakter.');
     return { username, nama, role, password };
 }
