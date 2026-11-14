@@ -251,12 +251,36 @@ async function fetchProfile(userId) {
     return data ? mapProfile(data) : null;
 }
 
+let namaPenggunaList = [];   // untuk dropdown Nama Salesman di form pesanan
+
 async function loadUsers() {
-    if (!can('users.manage')) { userList = []; fillUserFilters(); return; }
+    if (!can('users.manage')) {
+        userList = []; fillUserFilters();
+        namaPenggunaList = currentUser ? [currentUser] : [];
+        try {   // bila kebijakan database mengizinkan, tampilkan semua pengguna
+            const { data } = await sb.from('profiles').select('id, username, nama, role, default_pw').order('created_at');
+            if (data && data.length) namaPenggunaList = data.map(mapProfile);
+        } catch (e) { /* cukup nama akun sendiri */ }
+        return;
+    }
     const { data, error } = await sb.from('profiles').select('id, username, nama, role, default_pw').order('created_at');
     if (error) throw error;
     userList = data.map(mapProfile);
+    namaPenggunaList = userList;
     fillUserFilters();
+}
+
+function isiPilihanSalesman(nilai) {
+    const sel = document.getElementById('pesanan-kode-salesman');
+    if (!sel) return;
+    const names = [];
+    (namaPenggunaList.length ? namaPenggunaList : (currentUser ? [currentUser] : [])).forEach(u => {
+        const n = (u.nama || u.username || '').trim();
+        if (n && !names.includes(n)) names.push(n);
+    });
+    if (nilai && !names.includes(nilai)) names.push(nilai);   // data lama tetap terpilih
+    sel.innerHTML = '<option value="">Pilih nama pengguna</option>' + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    sel.value = nilai || '';
 }
 
 async function handleLogin(e) {
@@ -928,7 +952,7 @@ function openModalPesanan(id = null) {
         ord.items.forEach(item => addItemRow(item));
         document.getElementById('pesanan-catatan').value = ord.catatan || '';
         document.getElementById('pesanan-no-order').value = ord.noOrder || '';
-        document.getElementById('pesanan-kode-salesman').value = ord.kodeSalesman || '';
+        isiPilihanSalesman(ord.kodeSalesman || '');
         setPembayaran(ord.pembayaran || '');
     } else {
         document.getElementById('modal-pesanan-title').innerText = 'Buat Pesanan Baru';
@@ -938,7 +962,7 @@ function openModalPesanan(id = null) {
         document.getElementById('items-container').innerHTML = '';
         document.getElementById('pesanan-catatan').value = '';
         document.getElementById('pesanan-no-order').value = '';
-        document.getElementById('pesanan-kode-salesman').value = '';
+        isiPilihanSalesman('');
         setPembayaran('');
         addItemRow();
     }
@@ -1410,7 +1434,7 @@ function buildNotaSheets(ord) {
             ? (m.catatan ? `<div class="na-note"><b>Catatan:</b> ${esc(m.catatan)}</div>` : '') +
               `<div class="na-total"><span>TOTAL</span><span>${formatRupiah(m.grand)}</span></div>` +
               `<div class="na-sign">` +
-              ['Salesman', 'Gudang', 'Kacab'].map(n => `<div class="na-sb"><div class="na-sl">${n}</div></div>`).join('') +
+              ['Paraf Toko', 'Gudang', 'Salesman', 'Kacab'].map(n => `<div class="na-sb"><div class="na-sl">${n}</div></div>`).join('') +
               `</div>`
             : `<div class="na-more">bersambung ke halaman berikutnya &rarr;</div>`;
 
@@ -1422,7 +1446,7 @@ function buildNotaSheets(ord) {
             `</div>` +
             `<div class="na-info">` +
               `<div class="na-f"><span class="na-fl">No. Order</span><span class="na-fv">${esc(m.noOrder)}</span></div>` +
-              `<div class="na-f"><span class="na-fl">Kode Salesman</span><span class="na-fv">${esc(m.kodeSalesman)}</span></div>` +
+              `<div class="na-f"><span class="na-fl">Nama Salesman</span><span class="na-fv">${esc(m.kodeSalesman)}</span></div>` +
               `<div class="na-pay"><span class="na-cb"><i class="na-box">${m.bayar === 'cash' ? 'X' : ''}</i>Cash</span>` +
               `<span class="na-cb"><i class="na-box">${m.bayar === 'tempo' ? 'X' : ''}</i>Tempo</span></div>` +
             `</div>` +
@@ -1536,7 +1560,7 @@ function drawNotaSheet(ctx, m, ox, oy, k) {
     if (m.total > 1) text(`Hal ${m.idx + 1}/${m.total}`, x1, PY + 7.4, 3, 6.5, { color: '#333', align: 'right' });
     hline(x0, PY + headH - 0.3, cw, 0.3, ink);
 
-    // ---- baris info (No. Order, Kode Salesman, Cash/Tempo) ----
+    // ---- baris info (No. Order, Nama Salesman, Cash/Tempo) ----
     const infoTop = PY + headH + 1.5, infoBot = infoTop + 5.5;
     const cbW = t => 3.4 + 1 + tw(t, 7, true);
     const payW = cbW('Cash') + 3 + cbW('Tempo');
@@ -1549,7 +1573,7 @@ function drawNotaSheet(ctx, m, ox, oy, k) {
         if (value) text(fit(value, 7, true, vw - 1.6), vx + 0.8, infoBot - 3.8, 3.55, 7, { bold: true });
     };
     field('No. Order', m.noOrder, x0);
-    field('Kode Salesman', m.kodeSalesman, x0 + fW + 3);
+    field('Nama Salesman', m.kodeSalesman, x0 + fW + 3);
     let px = x0 + 2 * fW + 6;
     const payMid = infoBot - 2.25;
     [['Cash', 'cash'], ['Tempo', 'tempo']].forEach(([lab, key]) => {
@@ -1637,8 +1661,8 @@ function drawNotaSheet(ctx, m, ox, oy, k) {
         text('TOTAL', x0, totalTop, 4.5, 8.5, { bold: true });
         text(formatRupiah(m.grand), x1, totalTop, 4.5, 8.5, { bold: true, align: 'right' });
 
-        const bw = (cw - 4) / 3;
-        ['Salesman', 'Gudang', 'Kacab'].forEach((n, i) => {
+        const bw = (cw - 6) / 4;
+        ['Paraf Toko', 'Gudang', 'Salesman', 'Kacab'].forEach((n, i) => {
             const bx = x0 + i * (bw + 2);
             rect(bx + 0.3, signTop + 0.3, bw - 0.6, 3.8, '#f1f1f1');
             hline(bx + 0.3, signTop + 0.3 + 3.8 - 0.2, bw - 0.6, 0.2, '#888888');
@@ -2005,7 +2029,7 @@ function exportExcelLaporan() {
                 'Harga Satuan': item.harga,
                 'Subtotal': item.qty * item.harga,
                 'No. Order': ord.noOrder || '',
-                'Kode Salesman': ord.kodeSalesman || '',
+                'Nama Salesman': ord.kodeSalesman || '',
                 'Pembayaran': ord.pembayaran ? ord.pembayaran.toUpperCase() : '',
                 'Catatan Pesanan': ord.catatan || ''
             });
