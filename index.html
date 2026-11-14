@@ -281,6 +281,9 @@
                     </span>
                     <input type="text" id="search-pelanggan" oninput="renderPelanggan()" placeholder="Cari nama / no HP / alamat..." class="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
                 </div>
+                <select data-perm="users.manage" id="filter-pengguna-pelanggan" onchange="renderPelanggan()" aria-label="Filter pengguna" class="hidden ml-3 min-w-0 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary bg-white">
+                    <option value="">Semua pengguna</option>
+                </select>
             </div>
 
             <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

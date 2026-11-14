@@ -93,7 +93,7 @@ const TABLE_MAP = {
     pelanggan: {
         orderBy: 'created_at',
         to: (c) => ({ id: c.id, nama: c.nama, hp: c.hp, alamat: c.alamat || '' }),
-        from: (r) => ({ id: r.id, nama: r.nama, hp: r.hp, alamat: r.alamat || '' })
+        from: (r) => ({ id: r.id, nama: r.nama, hp: r.hp, alamat: r.alamat || '', ownerId: r.owner_id || '' })
     },
     pesanan: {
         orderBy: 'tanggal',
@@ -608,7 +608,7 @@ function userLabel(id) {
 }
 
 function fillUserFilters() {
-    ['filter-pengguna', 'laporan-pengguna'].forEach(elId => {
+    ['filter-pengguna', 'laporan-pengguna', 'filter-pengguna-pelanggan'].forEach(elId => {
         const el = byId(elId);
         if (!el) return;
         const cur = el.value;
@@ -769,7 +769,10 @@ function renderPelanggan() {
     const tbody = document.getElementById('table-pelanggan-body');
     tbody.innerHTML = '';
 
-    const filtered = pelangganList.filter(c => c.nama.toLowerCase().includes(keyword) || c.hp.includes(keyword) || c.alamat.toLowerCase().includes(keyword));
+    const filterUser = can('users.manage') && byId('filter-pengguna-pelanggan') ? (byId('filter-pengguna-pelanggan').value || '') : '';
+    const filtered = pelangganList.filter(c =>
+        (!filterUser || c.ownerId === filterUser) &&
+        (c.nama.toLowerCase().includes(keyword) || c.hp.includes(keyword) || c.alamat.toLowerCase().includes(keyword)));
 
     if (filtered.length === 0) {
         tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-gray-400">Tidak ada pelanggan ditemukan.</td></tr>`;
@@ -780,7 +783,7 @@ function renderPelanggan() {
         tbody.innerHTML += `
             <tr class="hover:bg-gray-50 transition">
                 <td data-label="No" class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
-                <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(c.nama)}</td>
+                <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(c.nama)}${(can('users.manage') && userLabel(c.ownerId)) ? `<div class="text-[11px] font-normal text-gray-500 mt-0.5"><i class="fa-solid fa-user mr-1"></i>${esc(userLabel(c.ownerId))}</div>` : ''}</td>
                 <td data-label="WhatsApp" class="py-3 px-4 text-emerald-600 font-medium"><i class="fa-brands fa-whatsapp mr-1"></i> ${esc(c.hp)}</td>
                 <td data-label="Alamat" class="py-3 px-4 text-gray-600">${esc(c.alamat || '-')}</td>
                 <td data-label="Aksi" class="py-3 px-4 text-center space-x-2">
