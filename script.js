@@ -551,10 +551,10 @@ async function savePengguna() {
         if (id) await callUsersApi('PATCH', { id, username, nama, role, password: pw });
         else await callUsersApi('POST', { username, nama, role, password: pw });
         await loadUsers();
-        // Area disimpan langsung ke profil (kolom profiles.area; lihat supabase/migrasi_area.sql)
+        // Area disimpan lewat fungsi database po_set_area (khusus Admin; lihat supabase/migrasi_area.sql)
         const saved = userList.find(x => x.username.toLowerCase() === username.toLowerCase());
         if (saved && (saved.area || '') !== area) {
-            const { error: aErr } = await sb.from('profiles').update({ area }).eq('id', saved.id);
+            const { error: aErr } = await sb.rpc('po_set_area', { p_id: saved.id, p_area: area });
             if (aErr) alert('Pengguna tersimpan, tetapi Area gagal disimpan: ' + aErr.message + '\nPastikan supabase/migrasi_area.sql sudah dijalankan.');
             else await loadUsers();
         }
