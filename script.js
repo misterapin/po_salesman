@@ -1062,7 +1062,7 @@ function addItemRow(existingData = null) {
         <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 relative">
             <div class="relative w-full sm:w-auto sm:flex-1 sm:min-w-0">
                 <input type="hidden" class="product-id-val" value="${esc(existingProdId)}">
-                <input type="text" oninput="onProductInput('${rowId}')" onfocus="onProductInput('${rowId}')" autocomplete="off" placeholder="Ketik atau pilih nama produk..." class="product-search-input w-full text-xs border border-gray-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary" value="${esc(existingProdName)}">
+                <input type="text" oninput="onProductInput('${rowId}')" onkeydown="onProductKey(event, '${rowId}')" autocomplete="off" placeholder="Ketik nama produk..." class="product-search-input w-full text-xs border border-gray-200 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary" value="${esc(existingProdName)}">
                 <div class="product-dropdown-list absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto hidden"></div>
             </div>
             <div class="w-20">
@@ -1100,6 +1100,7 @@ function addItemRow(existingData = null) {
     calculateTotalPesanan();
 }
 
+// Autocomplete produk: hanya muncul setelah mengetik (tanpa daftar dropdown saat kolom kosong).
 function onProductInput(rowId) {
     const row = document.getElementById(rowId);
     if (!row) return;
@@ -1110,15 +1111,28 @@ function onProductInput(rowId) {
 
     listDiv.innerHTML = '';
 
-    const matched = keyword
-        ? produkList.filter(p => p.nama.toLowerCase().includes(keyword) || (p.kategori && p.kategori.toLowerCase().includes(keyword)))
-        : produkList.slice(0, 15);
+    // Teks diubah setelah memilih produk -> pilihan lama dilepas agar tidak salah produk
+    const picked = produkList.find(p => p.id === idVal.value);
+    if (idVal.value && (!picked || picked.nama !== input.value)) {
+        idVal.value = '';
+        checkVarianAndSubtotal(rowId, null);
+    }
+
+    if (!keyword) {
+        listDiv.classList.add('hidden');
+        return;
+    }
+
+    const matched = produkList
+        .filter(p => p.nama.toLowerCase().includes(keyword) || (p.kategori && p.kategori.toLowerCase().includes(keyword)))
+        .slice(0, 20);
 
     if (matched.length === 0) {
         listDiv.innerHTML = `<div class="p-2 text-xs text-gray-400">Produk tidak ditemukan</div>`;
     } else {
         matched.forEach(p => {
             const item = document.createElement('div');
+            item.dataset.pick = '1';
             item.className = 'p-2 hover:bg-emerald-50 cursor-pointer text-xs border-b border-gray-100 transition';
             item.innerHTML = `<div class="font-bold text-gray-800">${esc(p.nama)}</div><div class="text-emerald-600">${formatRupiah(p.harga)} / ${esc(p.satuan)}</div>`;
             item.onmousedown = function(e) {
@@ -1132,9 +1146,17 @@ function onProductInput(rowId) {
         });
     }
     listDiv.classList.remove('hidden');
-    if (!keyword) {
-        checkVarianAndSubtotal(rowId, null);
-    }
+}
+
+// Enter = pilih saran pertama; Escape = tutup saran
+function onProductKey(e, rowId) {
+    const row = document.getElementById(rowId);
+    if (!row) return;
+    const listDiv = row.querySelector('.product-dropdown-list');
+    if (e.key === 'Escape') { listDiv.classList.add('hidden'); return; }
+    if (e.key !== 'Enter' || listDiv.classList.contains('hidden')) return;
+    const first = listDiv.querySelector('[data-pick]');
+    if (first) { e.preventDefault(); first.onmousedown({ preventDefault() {} }); }
 }
 
 function checkVarianAndSubtotal(rowId, prod, selectedVarian = '', resetHarga = false) {
