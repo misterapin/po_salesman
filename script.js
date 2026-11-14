@@ -781,7 +781,23 @@ async function deleteProduk(id) {
 }
 
 // ================= RENDER PELANGGAN =================
-function renderPelanggan() {
+// Daftar pelanggan dirender bertahap (50 baris) dan sekali tulis ke DOM agar menu tetap ringan.
+const PELANGGAN_PAGE = 50;
+let pelangganLimit = PELANGGAN_PAGE;
+let pelangganTimer = null;
+
+function cariPelanggan() {                 // dipanggil saat mengetik (ditunda sebentar)
+    clearTimeout(pelangganTimer);
+    pelangganTimer = setTimeout(renderPelanggan, 200);
+}
+
+function tampilLagiPelanggan() {
+    pelangganLimit += PELANGGAN_PAGE;
+    renderPelanggan(true);
+}
+
+function renderPelanggan(keepLimit) {
+    if (keepLimit !== true) pelangganLimit = PELANGGAN_PAGE;
     const keyword = document.getElementById('search-pelanggan').value.toLowerCase();
     const tbody = document.getElementById('table-pelanggan-body');
     tbody.innerHTML = '';
@@ -796,20 +812,26 @@ function renderPelanggan() {
         return;
     }
 
-    filtered.forEach((c, idx) => {
-        tbody.innerHTML += `
+    const isAdminView = can('users.manage'), canEdit = can('pelanggan.write'), canDel = can('pelanggan.delete');
+    const owners = {};
+    if (isAdminView) userList.forEach(u => { owners[u.id] = u.nama || u.username; });
+    const shown = filtered.slice(0, pelangganLimit);
+    const html = shown.map((c, idx) => `
             <tr class="hover:bg-gray-50 transition">
                 <td data-label="No" class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
-                <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(c.nama)}${c.area ? ` <span class="font-sans text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">${esc(c.area)}</span>` : ''}${(can('users.manage') && userLabel(c.ownerId)) ? `<div class="text-[11px] font-normal text-gray-500 mt-0.5"><i class="fa-solid fa-user mr-1"></i>${esc(userLabel(c.ownerId))}</div>` : ''}</td>
+                <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(c.nama)}${c.area ? ` <span class="font-sans text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">${esc(c.area)}</span>` : ''}${(isAdminView && owners[c.ownerId]) ? `<div class="text-[11px] font-normal text-gray-500 mt-0.5"><i class="fa-solid fa-user mr-1"></i>${esc(owners[c.ownerId])}</div>` : ''}</td>
                 <td data-label="WhatsApp" class="py-3 px-4 text-emerald-600 font-medium"><i class="fa-brands fa-whatsapp mr-1"></i> ${esc(c.hp)}</td>
                 <td data-label="Alamat" class="py-3 px-4 text-gray-600">${esc(c.alamat || '-')}</td>
                 <td data-label="Aksi" class="py-3 px-4 text-center space-x-2">
-                    ${can('pelanggan.write') ? `<button onclick="editPelanggan('${c.id}')" class="text-blue-600 hover:text-blue-800 p-1" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
-                    ${can('pelanggan.delete') ? `<button onclick="deletePelanggan('${c.id}')" class="text-red-600 hover:text-red-800 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>` : ''}
+                    ${canEdit ? `<button onclick="editPelanggan('${c.id}')" class="text-blue-600 hover:text-blue-800 p-1" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
+                    ${canDel ? `<button onclick="deletePelanggan('${c.id}')" class="text-red-600 hover:text-red-800 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
             </tr>
-        `;
-    });
+        `).join('');
+    const sisa = filtered.length - shown.length;
+    tbody.innerHTML = html + (sisa > 0
+        ? `<tr><td colspan="5" class="text-center py-4"><button onclick="tampilLagiPelanggan()" class="px-4 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition">Tampilkan ${Math.min(PELANGGAN_PAGE, sisa)} lagi <span class="text-gray-400 font-normal">(sisa ${sisa} dari ${filtered.length} toko)</span></button></td></tr>`
+        : '');
 }
 
 function openModalPelanggan(id = null) {
