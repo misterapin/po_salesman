@@ -41,7 +41,7 @@
         }
     </script>
     <!-- Stylesheet -->
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20261114b">
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
 
@@ -708,13 +708,22 @@
 
     <!-- Script Utama -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-    <script src="config.js"></script>
-    <script src="script.js"></script>
+    <script src="config.js?v=20261114b"></script>
+    <script src="script.js?v=20261114b"></script>
     <script>
         // Daftarkan service worker agar aplikasi bisa dipasang (PWA / APK).
         if ('serviceWorker' in navigator) {
+            // Versi baru langsung dipakai: bila service worker baru mengambil alih, halaman dimuat ulang sekali.
+            var swSudahAda = !!navigator.serviceWorker.controller, swReload = false;
+            navigator.serviceWorker.addEventListener('controllerchange', function () {
+                if (!swSudahAda || swReload) return;
+                swReload = true;
+                location.reload();
+            });
             window.addEventListener('load', function () {
-                navigator.serviceWorker.register('/sw.js').catch(function () { /* abaikan */ });
+                navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+                    .then(function (reg) { reg.update(); })
+                    .catch(function () { /* abaikan */ });
             });
         }
     </script>

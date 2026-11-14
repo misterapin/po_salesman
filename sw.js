@@ -1,7 +1,7 @@
 // Service worker PO Salesman: syarat agar bisa dipasang sebagai aplikasi.
 // Strategi: jaringan dulu (data & kode selalu terbaru); cache hanya cadangan
 // tampilan dasar bila sedang tidak ada internet. API dan Supabase TIDAK pernah di-cache.
-const CACHE = 'po-salesman-v2';
+const CACHE = 'po-salesman-v3';
 const SHELL = ['/', '/index.html', '/style.css', '/script.js', '/config.js', '/manifest.json', '/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -23,12 +23,12 @@ self.addEventListener('fetch', (e) => {
     if (url.pathname.startsWith('/api/')) return;                            // API server: tidak di-cache
 
     e.respondWith(
-        fetch(req).then(res => {
+        fetch(req, { cache: 'no-store' }).then(res => {   // lewati cache HTTP browser (penting di HP)
             if (res && res.ok) {
                 const copy = res.clone();
                 caches.open(CACHE).then(c => c.put(req, copy));
             }
             return res;
-        }).catch(() => caches.match(req).then(r => r || (req.mode === 'navigate' ? caches.match('/index.html') : undefined)))
+        }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || (req.mode === 'navigate' ? caches.match('/index.html') : undefined)))
     );
 });
