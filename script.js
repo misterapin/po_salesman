@@ -79,10 +79,10 @@ const usernameToEmail = (u) => `${String(u).trim().toLowerCase()}@${EMAIL_DOMAIN
 
 // Kolom tambahan pada tabel pesanan. Bila kolom belum ada di database, pesanan yang tidak
 // memakai kolom itu tetap bisa disimpan; mengisinya akan menampilkan pesan pengingat migrasi.
-const PESANAN_EXTRA = { catatan: 'catatan', noOrder: 'no_order', kodeSalesman: 'kode_salesman', pembayaran: 'pembayaran' };
-const extraSupported = { catatan: true, no_order: true, kode_salesman: true, pembayaran: true };
-const EXTRA_COL_RE = /catatan|no_order|kode_salesman|pembayaran/i;
-const MSG_KOLOM = 'Kolom baru (catatan / no. order / kode salesman / pembayaran) belum ada di database. Jalankan SQL di supabase/migrasi_nota_a6.sql pada Supabase SQL Editor, lalu coba lagi.';
+const PESANAN_EXTRA = { catatan: 'catatan', noOrder: 'no_order', kodeSalesman: 'kode_salesman', pembayaran: 'pembayaran', parafToko: 'paraf_toko' };
+const extraSupported = { catatan: true, no_order: true, kode_salesman: true, pembayaran: true, paraf_toko: true };
+const EXTRA_COL_RE = /catatan|no_order|kode_salesman|pembayaran|paraf_toko/i;
+const MSG_KOLOM = 'Kolom baru (catatan / no. order / kode salesman / pembayaran / paraf toko) belum ada di database. Jalankan SQL migrasi di folder supabase (migrasi_nota_a6.sql dan migrasi_paraf_toko.sql) pada Supabase SQL Editor, lalu coba lagi.';
 
 const TABLE_MAP = {
     produk: {
@@ -112,7 +112,7 @@ const TABLE_MAP = {
             });
             return row;
         },
-        from: (r) => ({ id: r.id, noNota: r.no_nota, tanggal: r.tanggal, pelangganId: r.pelanggan_id, items: r.items || [], catatan: r.catatan || '', noOrder: r.no_order || '', kodeSalesman: r.kode_salesman || '', pembayaran: r.pembayaran || '', ownerId: r.owner_id || '' })
+        from: (r) => ({ id: r.id, noNota: r.no_nota, tanggal: r.tanggal, pelangganId: r.pelanggan_id, items: r.items || [], catatan: r.catatan || '', noOrder: r.no_order || '', kodeSalesman: r.kode_salesman || '', pembayaran: r.pembayaran || '', parafToko: r.paraf_toko || '', ownerId: r.owner_id || '' })
     }
 };
 
@@ -1361,6 +1361,136 @@ function closeModalWhatsapp() {
     document.getElementById('modal-whatsapp').classList.add('hidden');
 }
 
+// ================= PARAF TOKO: goresan tanda tangan di layar =================
+// Disimpan permanen di kolom pesanan.paraf_toko (gambar PNG transparan berbentuk data URL).
+const parafImgCache = {};   // { dataURL: Image } agar tidak dimuat ulang tiap menggambar
+
+function loadParafImg(url) {
+    return new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = url; });
+}
+
+function getParafImg(url) {
+    if (!url) return null;
+    if (!parafImgCache[url]) { const im = new Image(); im.src = url; parafImgCache[url] = im; }
+    return parafImgCache[url];
+}
+
+// Pastikan gambar paraf sudah termuat sebelum nota digambar ke Canvas.
+async function preloadParaf(list) {
+    await Promise.all(list.filter(o => o.parafToko).map(o => new Promise(res => {
+        const im = getParafImg(o.parafToko);
+        if (im.complete) res(); else { im.onload = res; im.onerror = res; }
+    })));
+}
+
+let savingParaf = false;
+let sigCtx = null, sigDrawing = false, sigHas = false, sigLast = null, sigMid = null, sigBox = null, sigBound = false;
+const SIG_LW = 4;       // tebal goresan (px layar)
+
+function loadParafImg(url) {
+    return new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = url; });
+}
+
+function sigSetup() {
+    const c = byId('paraf-canvas');
+    const dpr = window.devicePixelRatio || 1;
+    c.width = Math.max(1, Math.round(c.clientWidth * dpr));
+    c.height = Math.max(1, Math.round(c.clientHeight * dpr));
+    sigCtx = c.getContext('2d');
+    sigCtx.lineCap = 'round'; sigCtx.lineJoin = 'round';
+    sigCtx.lineWidth = SIG_LW * dpr; sigCtx.strokeStyle = '#111'; sigCtx.fillStyle = '#111';
+    sigHas = false; sigBox = null;
+    if (sigBound) return;
+    sigBound = true;
+    const pt = (e) => { const r = c.getBoundingClientRect(); return { x: (e.clientX - r.left) * c.width / r.width, y: (e.clientY - r.top) * c.height / r.height }; };
+    const grow = (p) => {
+        sigBox = sigBox ? { x0: Math.min(sigBox.x0, p.x), y0: Math.min(sigBox.y0, p.y), x1: Math.max(sigBox.x1, p.x), y1: Math.max(sigBox.y1, p.y) } : { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+    };
+    c.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        try { c.setPointerCapture(e.pointerId); } catch (err) { /* abaikan */ }
+        sigDrawing = true; sigHas = true;
+        const p = pt(e); sigLast = p; sigMid = p; grow(p);
+        sigCtx.beginPath(); sigCtx.arc(p.x, p.y, sigCtx.lineWidth / 2, 0, Math.PI * 2); sigCtx.fill();
+    });
+    c.addEventListener('pointermove', (e) => {
+        if (!sigDrawing) return;
+        e.preventDefault();
+        const p = pt(e); grow(p);
+        const mid = { x: (sigLast.x + p.x) / 2, y: (sigLast.y + p.y) / 2 };
+        sigCtx.beginPath(); sigCtx.moveTo(sigMid.x, sigMid.y);
+        sigCtx.quadraticCurveTo(sigLast.x, sigLast.y, mid.x, mid.y); sigCtx.stroke();
+        sigMid = mid; sigLast = p;
+    });
+    const end = () => { sigDrawing = false; };
+    c.addEventListener('pointerup', end);
+    c.addEventListener('pointercancel', end);
+    c.addEventListener('pointerleave', end);
+}
+
+function openParafToko() {
+    if (!currentNotaId) return;
+    byId('modal-paraf').classList.remove('hidden');
+    const cur = pesananList.find(o => o.id === currentNotaId);
+    byId('paraf-hapus').classList.toggle('hidden', !(cur && cur.parafToko));
+    requestAnimationFrame(sigSetup);
+}
+
+function closeParafToko() {
+    byId('modal-paraf').classList.add('hidden');
+    sigDrawing = false;
+}
+
+function clearParafCanvas() {
+    if (!sigCtx) return;
+    sigCtx.clearRect(0, 0, sigCtx.canvas.width, sigCtx.canvas.height);
+    sigHas = false; sigBox = null;
+}
+
+async function simpanParafKeDb(ord, url) {
+    if (!requirePerm('pesanan.write')) return false;
+    if (savingParaf) return false;
+    savingParaf = true;
+    try {
+        await dbUpsert('pesanan', { ...ord, parafToko: url });
+        ord.parafToko = url;
+        return true;
+    } catch (err) {
+        dbFail(err, 'menyimpan paraf toko');
+        return false;
+    } finally {
+        savingParaf = false;
+    }
+}
+
+async function saveParafToko() {
+    if (!sigHas || !sigBox) { alert('Belum ada goresan paraf. Silakan goreskan paraf di kotak terlebih dahulu.'); return; }
+    const ord = pesananList.find(o => o.id === currentNotaId);
+    if (!ord) return;
+    const src = sigCtx.canvas;
+    const pad = Math.ceil(sigCtx.lineWidth * 1.5);
+    const x = Math.max(0, Math.floor(sigBox.x0 - pad)), y = Math.max(0, Math.floor(sigBox.y0 - pad));
+    const w = Math.min(src.width - x, Math.ceil(sigBox.x1 - sigBox.x0 + pad * 2));
+    const h = Math.min(src.height - y, Math.ceil(sigBox.y1 - sigBox.y0 + pad * 2));
+    const sc = Math.min(1, 600 / Math.max(1, w));   // batasi lebar 600 px agar ukuran data kecil
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(w * sc)); out.height = Math.max(1, Math.round(h * sc));
+    out.getContext('2d').drawImage(src, x, y, w, h, 0, 0, out.width, out.height);
+    const url = out.toDataURL('image/png');
+    if (!(await simpanParafKeDb(ord, url))) return;
+    closeParafToko();
+    previewWhatsapp(currentNotaId);   // segarkan pratinjau nota
+}
+
+async function hapusParafToko() {
+    const ord = pesananList.find(o => o.id === currentNotaId);
+    if (!ord) return;
+    if (!confirm('Hapus paraf toko pada nota ini?')) return;
+    if (!(await simpanParafKeDb(ord, ''))) return;
+    closeParafToko();
+    previewWhatsapp(currentNotaId);
+}
+
 // ================= UNDUH GAMBAR A4 REKAP SEMUA PESANAN =================
 // ================= NOTA A6 LANDSCAPE (148 x 105 mm) =================
 let currentNotaId = '';
@@ -1408,6 +1538,8 @@ function buildNotaModels(ord) {
         alamatLine: [alamat, hp].filter(Boolean).join('  \u2022  '),
         noOrder: ord.noOrder || '',
         kodeSalesman: ord.kodeSalesman || '',
+        parafToko: ord.parafToko || '',
+        parafImg: getParafImg(ord.parafToko),
         bayar: ord.pembayaran || '',
         catatan,
         grand,
@@ -1437,7 +1569,7 @@ function buildNotaSheets(ord) {
             ? (m.catatan ? `<div class="na-note"><b>Catatan:</b> ${esc(m.catatan)}</div>` : '') +
               `<div class="na-total"><span>TOTAL</span><span>${formatRupiah(m.grand)}</span></div>` +
               `<div class="na-sign">` +
-              ['Paraf Toko', 'Gudang', 'Salesman', 'Kacab'].map(n => `<div class="na-sb"><div class="na-sl">${n}</div></div>`).join('') +
+              ['Paraf Toko', 'Gudang', 'Salesman', 'Kacab'].map(n => `<div class="na-sb"><div class="na-sl">${n}</div>${(n === 'Paraf Toko' && m.parafToko) ? `<img class="na-sig" src="${m.parafToko}" alt="">` : ''}</div>`).join('') +
               `</div>`
             : `<div class="na-more">bersambung ke halaman berikutnya &rarr;</div>`;
 
@@ -1671,6 +1803,12 @@ function drawNotaSheet(ctx, m, ox, oy, k) {
             hline(bx + 0.3, signTop + 0.3 + 3.8 - 0.2, bw - 0.6, 0.2, '#888888');
             frame(bx, signTop, bw, 15, 0.3, ink);
             text(n, bx + bw / 2, signTop + 0.3, 3.4, 6.5, { bold: true, align: 'center' });
+            if (n === 'Paraf Toko' && m.parafImg && m.parafImg.naturalWidth) {
+                const ax = bx + 0.9, ay = signTop + 4.4, aw = bw - 1.8, ah = 10.1;
+                const sc = Math.min(aw / m.parafImg.naturalWidth, ah / m.parafImg.naturalHeight);
+                const dw = m.parafImg.naturalWidth * sc, dh = m.parafImg.naturalHeight * sc;
+                ctx.drawImage(m.parafImg, X(ax + (aw - dw) / 2), Y(ay + (ah - dh) / 2), L(dw), L(dh));
+            }
         });
     } else {
         text('bersambung ke halaman berikutnya \u2192', x1, tblBottom + 1, 3, 6.5, { italic: true, color: '#444', align: 'right' });
@@ -1781,6 +1919,7 @@ async function downloadInvoiceImage() {
     notaBusy = true;
     try {
         if (document.fonts && document.fonts.ready) await document.fonts.ready;
+        await preloadParaf([ord]);
         const models = buildNotaModels(ord);
         for (let i = 0; i < models.length; i++) {
             const canvas = renderNotaCanvas(models[i]);
@@ -1831,6 +1970,7 @@ async function exportLaporanImageA4() {
     }
 
     const models = [];
+    await preloadParaf(filtered);
     filtered.forEach(ord => buildNotaModels(ord).forEach(m => models.push(m)));
     const pages = [];
     for (let i = 0; i < models.length; i += 4) pages.push(models.slice(i, i + 4));
@@ -1862,6 +2002,7 @@ async function exportLaporanPdfA4() {
     }
 
     const models = [];
+    await preloadParaf(filtered);
     filtered.forEach(ord => buildNotaModels(ord).forEach(m => models.push(m)));
     const groups = [];
     for (let i = 0; i < models.length; i += 4) groups.push(models.slice(i, i + 4));

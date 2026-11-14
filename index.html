@@ -574,6 +574,30 @@
         </div>
     </div>
 
+    <!-- ================= MODAL: PARAF TOKO (goresan di layar) ================= -->
+    <div id="modal-paraf" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-4" style="z-index:60">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div class="px-5 py-3 border-b border-gray-200 flex justify-between items-center bg-emerald-600 text-white">
+                <h3 class="font-bold text-base flex items-center"><i class="fa-solid fa-signature mr-2"></i> Paraf Toko</h3>
+                <button onclick="closeParafToko()" class="text-white hover:text-gray-200 text-xl font-bold" aria-label="Tutup">&times;</button>
+            </div>
+            <div class="p-4 space-y-2">
+                <p class="text-xs text-gray-500">Minta pihak toko menggoreskan paraf di kotak di bawah ini (pakai jari atau stylus).</p>
+                <canvas id="paraf-canvas" class="w-full border-2 border-dashed border-gray-300 rounded-xl bg-white" style="height:200px;touch-action:none;cursor:crosshair"></canvas>
+            </div>
+            <div class="px-4 py-3 border-t border-gray-200 bg-gray-50 flex flex-wrap items-center justify-between gap-2">
+                <div class="flex gap-2">
+                    <button onclick="clearParafCanvas()" class="px-3 py-2 border border-gray-300 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"><i class="fa-solid fa-eraser mr-1"></i> Ulangi</button>
+                    <button id="paraf-hapus" onclick="hapusParafToko()" class="hidden px-3 py-2 border border-red-200 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 transition"><i class="fa-solid fa-trash mr-1"></i> Hapus Paraf</button>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="closeParafToko()" class="px-3 py-2 border border-gray-300 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-100 transition">Batal</button>
+                    <button onclick="saveParafToko()" class="px-4 py-2 bg-primary hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold shadow transition">Simpan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ================= MODAL: PREVIEW & UNDUH GAMBAR NOTA ================= -->
     <div id="modal-whatsapp" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]">
@@ -590,6 +614,9 @@
 
             <div class="px-4 sm:px-6 py-4 border-t border-gray-200 bg-gray-50 flex flex-wrap justify-between items-center gap-2">
                 <div class="flex flex-wrap gap-2">
+                    <button onclick="openParafToko()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow transition flex items-center">
+                        <i class="fa-solid fa-signature mr-1.5"></i> Paraf Toko
+                    </button>
                     <button onclick="downloadInvoiceImage()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow transition flex items-center">
                         <i class="fa-solid fa-image mr-1.5"></i> Unduh Gambar
                     </button>
