@@ -81,8 +81,10 @@ const usernameToEmail = (u) => `${String(u).trim().toLowerCase()}@${EMAIL_DOMAIN
 // memakai kolom itu tetap bisa disimpan; mengisinya akan menampilkan pesan pengingat migrasi.
 const PESANAN_EXTRA = { catatan: 'catatan', noOrder: 'no_order', kodeSalesman: 'kode_salesman', pembayaran: 'pembayaran', parafToko: 'paraf_toko' };
 const extraSupported = { catatan: true, no_order: true, kode_salesman: true, pembayaran: true, paraf_toko: true };
-const EXTRA_COL_RE = /catatan|no_order|kode_salesman|pembayaran|paraf_toko/i;
-const MSG_KOLOM = 'Kolom baru (catatan / no. order / kode salesman / pembayaran / paraf toko) belum ada di database. Jalankan SQL migrasi di folder supabase (migrasi_nota_a6.sql dan migrasi_paraf_toko.sql) pada Supabase SQL Editor, lalu coba lagi.';
+const EXTRA_COL_RE = /catatan|no_order|kode_salesman|pembayaran|paraf_toko|area/i;
+const MSG_KOLOM = 'Kolom baru (catatan / no. order / kode salesman / pembayaran / paraf toko / area) belum ada di database. Jalankan SQL migrasi di folder supabase (migrasi_nota_a6.sql, migrasi_paraf_toko.sql, migrasi_area.sql) pada Supabase SQL Editor, lalu coba lagi.';
+
+let pelangganAreaOk = true;   // false bila kolom pelanggan.area belum dibuat (migrasi_area.sql)
 
 const TABLE_MAP = {
     produk: {
@@ -92,8 +94,12 @@ const TABLE_MAP = {
     },
     pelanggan: {
         orderBy: 'created_at',
-        to: (c) => ({ id: c.id, nama: c.nama, hp: c.hp, alamat: c.alamat || '' }),
-        from: (r) => ({ id: r.id, nama: r.nama, hp: r.hp, alamat: r.alamat || '', ownerId: r.owner_id || '' })
+        to: (c) => {
+            const row = { id: c.id, nama: c.nama, hp: c.hp, alamat: c.alamat || '' };
+            if (c.area !== undefined && (pelangganAreaOk || c.area)) row.area = c.area || '';
+            return row;
+        },
+        from: (r) => ({ id: r.id, nama: r.nama, hp: r.hp, alamat: r.alamat || '', area: r.area || '', ownerId: r.owner_id || '' })
     },
     pesanan: {
         orderBy: 'tanggal',
@@ -133,6 +139,7 @@ async function dbFetchAll(table) {
         out.push(...data);
         if (data.length < size) break;
     }
+    if (table === 'pelanggan' && out.length) pelangganAreaOk = ('area' in out[0]);
     if (table === 'pesanan' && out.length) Object.keys(extraSupported).forEach(col => { extraSupported[col] = (col in out[0]); });
     return out.map(cfg.from);
 }
@@ -242,11 +249,11 @@ function setLoginBusy(busy) {
 }
 
 function mapProfile(r) {
-    return { id: r.id, username: r.username, nama: r.nama, role: r.role, defaultPw: !!r.default_pw };
+    return { id: r.id, username: r.username, nama: r.nama, role: r.role, area: r.area || '', defaultPw: !!r.default_pw };
 }
 
 async function fetchProfile(userId) {
-    const { data, error } = await sb.from('profiles').select('id, username, nama, role, default_pw').eq('id', userId).maybeSingle();
+    const { data, error } = await sb.from('profiles').select('*').eq('id', userId).maybeSingle();
     if (error) throw error;
     return data ? mapProfile(data) : null;
 }
@@ -258,12 +265,12 @@ async function loadUsers() {
         userList = []; fillUserFilters();
         namaPenggunaList = currentUser ? [currentUser] : [];
         try {   // bila kebijakan database mengizinkan, tampilkan semua pengguna
-            const { data } = await sb.from('profiles').select('id, username, nama, role, default_pw').order('created_at');
+            const { data } = await sb.from('profiles').select('*').order('created_at');
             if (data && data.length) namaPenggunaList = data.map(mapProfile);
         } catch (e) { /* cukup nama akun sendiri */ }
         return;
     }
-    const { data, error } = await sb.from('profiles').select('id, username, nama, role, default_pw').order('created_at');
+    const { data, error } = await sb.from('profiles').select('*').order('created_at');
     if (error) throw error;
     userList = data.map(mapProfile);
     namaPenggunaList = userList;
@@ -485,6 +492,7 @@ function renderPengguna() {
                 <td data-label="No" class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
                 <td data-label="Username" class="py-3 px-4 font-mono font-semibold text-gray-800">${esc(u.username)}${self ? ' <span class="text-[10px] text-gray-400 font-sans">(Anda)</span>' : ''}</td>
                 <td data-label="Nama" class="py-3 px-4 text-gray-700">${esc(u.nama)}</td>
+                <td data-label="Area" class="py-3 px-4 text-gray-700">${esc(u.area || '-')}</td>
                 <td data-label="Role" class="py-3 px-4"><span class="${badge} px-2.5 py-1 rounded-md text-xs font-bold uppercase">${esc(ROLE_LABEL[u.role] || u.role)}</span></td>
                 <td data-label="Aksi" class="py-3 px-4 text-center space-x-2">
                     <button onclick="openModalPengguna('${u.id}')" class="text-blue-600 hover:text-blue-800 p-1" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
@@ -501,6 +509,7 @@ function openModalPengguna(id = null) {
     byId('pengguna-id').value = u ? u.id : '';
     byId('pengguna-username').value = u ? u.username : '';
     byId('pengguna-nama').value = u ? u.nama : '';
+    byId('pengguna-area').value = u ? (u.area || '') : '';
     byId('pengguna-role').value = u ? u.role : 'salesman';
     byId('pengguna-role').disabled = !!(u && currentUser && u.id === currentUser.id);
     byId('pengguna-password').value = '';
@@ -518,6 +527,7 @@ async function savePengguna() {
     const id = byId('pengguna-id').value;
     const username = byId('pengguna-username').value.trim();
     const nama = byId('pengguna-nama').value.trim();
+    const area = byId('pengguna-area').value.trim();
     let role = byId('pengguna-role').value;
     const pw = byId('pengguna-password').value;
 
@@ -541,6 +551,13 @@ async function savePengguna() {
         if (id) await callUsersApi('PATCH', { id, username, nama, role, password: pw });
         else await callUsersApi('POST', { username, nama, role, password: pw });
         await loadUsers();
+        // Area disimpan langsung ke profil (kolom profiles.area; lihat supabase/migrasi_area.sql)
+        const saved = userList.find(x => x.username.toLowerCase() === username.toLowerCase());
+        if (saved && (saved.area || '') !== area) {
+            const { error: aErr } = await sb.from('profiles').update({ area }).eq('id', saved.id);
+            if (aErr) alert('Pengguna tersimpan, tetapi Area gagal disimpan: ' + aErr.message + '\nPastikan supabase/migrasi_area.sql sudah dijalankan.');
+            else await loadUsers();
+        }
     } catch (err) {
         alert('Gagal menyimpan pengguna: ' + err.message);
         return;
@@ -772,7 +789,7 @@ function renderPelanggan() {
     const filterUser = can('users.manage') && byId('filter-pengguna-pelanggan') ? (byId('filter-pengguna-pelanggan').value || '') : '';
     const filtered = pelangganList.filter(c =>
         (!filterUser || c.ownerId === filterUser) &&
-        (c.nama.toLowerCase().includes(keyword) || c.hp.includes(keyword) || c.alamat.toLowerCase().includes(keyword)));
+        (c.nama.toLowerCase().includes(keyword) || c.hp.includes(keyword) || c.alamat.toLowerCase().includes(keyword) || (c.area || '').toLowerCase().includes(keyword)));
 
     if (filtered.length === 0) {
         tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-gray-400">Tidak ada pelanggan ditemukan.</td></tr>`;
@@ -783,7 +800,7 @@ function renderPelanggan() {
         tbody.innerHTML += `
             <tr class="hover:bg-gray-50 transition">
                 <td data-label="No" class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
-                <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(c.nama)}${(can('users.manage') && userLabel(c.ownerId)) ? `<div class="text-[11px] font-normal text-gray-500 mt-0.5"><i class="fa-solid fa-user mr-1"></i>${esc(userLabel(c.ownerId))}</div>` : ''}</td>
+                <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(c.nama)}${c.area ? ` <span class="font-sans text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">${esc(c.area)}</span>` : ''}${(can('users.manage') && userLabel(c.ownerId)) ? `<div class="text-[11px] font-normal text-gray-500 mt-0.5"><i class="fa-solid fa-user mr-1"></i>${esc(userLabel(c.ownerId))}</div>` : ''}</td>
                 <td data-label="WhatsApp" class="py-3 px-4 text-emerald-600 font-medium"><i class="fa-brands fa-whatsapp mr-1"></i> ${esc(c.hp)}</td>
                 <td data-label="Alamat" class="py-3 px-4 text-gray-600">${esc(c.alamat || '-')}</td>
                 <td data-label="Aksi" class="py-3 px-4 text-center space-x-2">
@@ -831,7 +848,8 @@ async function savePelanggan() {
         return;
     }
 
-    const row = { id: id || 'c_' + Date.now(), nama, hp, alamat };
+    const lama = id ? pelangganList.find(c => c.id === id) : null;
+    const row = { id: id || 'c_' + Date.now(), nama, hp, alamat, area: lama ? (lama.area || '') : ((currentUser && currentUser.area) || '') };
     try {
         await dbUpsert('pelanggan', row);
     } catch (err) {
@@ -839,7 +857,7 @@ async function savePelanggan() {
     }
 
     const idx = pelangganList.findIndex(c => c.id === row.id);
-    if (idx !== -1) pelangganList[idx] = row; else pelangganList.unshift(row);
+    if (idx !== -1) pelangganList[idx] = { ...pelangganList[idx], ...row }; else pelangganList.unshift(row);
 
     closeModalPelanggan();
     renderPelanggan();
