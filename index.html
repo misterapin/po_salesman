@@ -41,7 +41,7 @@
         }
     </script>
     <!-- Stylesheet -->
-    <link rel="stylesheet" href="style.css?v=20261114b">
+    <link rel="stylesheet" href="style.css?v=20261114d">
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col">
 
@@ -148,6 +148,9 @@
             </button>
             <button onclick="switchTab('laporan')" id="tab-laporan" class="tab-btn py-3 px-4 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 flex items-center whitespace-nowrap transition">
                 <i class="fa-solid fa-chart-line mr-2"></i> Laporan & Rekap
+            </button>
+            <button onclick="switchTab('tagihan')" id="tab-tagihan" class="tab-btn py-3 px-4 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 flex items-center whitespace-nowrap transition">
+                <i class="fa-solid fa-file-invoice-dollar mr-2"></i> Tagihan
             </button>
             <button data-perm="users.manage" onclick="switchTab('pengguna')" id="tab-pengguna" class="hidden tab-btn py-3 px-4 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 flex items-center whitespace-nowrap transition">
                 <i class="fa-solid fa-user-shield mr-2"></i> Pengguna
@@ -397,6 +400,94 @@
                             <!-- Populated by JS -->
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= SECTION: TAGIHAN HARIAN ================= -->
+        <section id="section-tagihan" class="tab-content hidden space-y-4">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                    <h2 class="text-xl font-bold text-gray-800">Laporan Penerimaan Tagihan Harian</h2>
+                    <p id="tagihan-status" class="text-xs text-gray-500 mt-0.5">Pilih tanggal, lalu isi tagihan yang diterima.</p>
+                    <p id="tagihan-paper" class="text-[11px] text-gray-400 mt-0.5"></p>
+                </div>
+                <div class="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
+                    <button onclick="simpanPdfTagihan()" id="tagihan-pdf" class="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md transition flex items-center justify-center">
+                        <i class="fa-solid fa-file-pdf mr-2"></i> Simpan PDF
+                    </button>
+                    <button onclick="simpanTagihan()" id="tagihan-simpan" class="bg-primary hover:bg-emerald-600 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md transition flex items-center justify-center">
+                        <i class="fa-solid fa-floppy-disk mr-2"></i> Simpan Data
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                    <label for="tagihan-kode" class="block text-xs font-semibold text-gray-600 uppercase mb-1">Kode</label>
+                    <select id="tagihan-kode" onchange="tgKodeChanged()" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary">
+                        <option value="">Pilih...</option>
+                        <option value="SMS">SMS</option>
+                        <option value="WM">WM</option>
+                        <option value="MSJ">MSJ</option>
+                        <option value="__manual">Tulis manual...</option>
+                    </select>
+                    <input type="text" id="tagihan-kode-manual" maxlength="20" autocomplete="off" oninput="tagihanDirty()" placeholder="Tulis kode" aria-label="Kode manual" class="hidden mt-2 w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
+                </div>
+                <div>
+                    <label for="tagihan-tanggal" class="block text-xs font-semibold text-gray-600 uppercase mb-1">Tanggal</label>
+                    <input type="date" id="tagihan-tanggal" onchange="muatTagihan()" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
+                </div>
+                <div>
+                    <label for="tagihan-wilayah" class="block text-xs font-semibold text-gray-600 uppercase mb-1">Wilayah / Area</label>
+                    <input type="text" id="tagihan-wilayah" maxlength="40" autocomplete="off" oninput="tagihanWilayahDiubah()" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
+                </div>
+                <div>
+                    <label for="tagihan-salesman" class="block text-xs font-semibold text-gray-600 uppercase mb-1">Salesman</label>
+                    <input type="text" id="tagihan-salesman" maxlength="60" autocomplete="off" oninput="tagihanDirty()" class="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary">
+                </div>
+            </div>
+            <p id="tagihan-hint" class="text-xs text-gray-500 px-1"></p>
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="tagihan-table w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-gray-50 border-b border-gray-200 text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                                <th class="py-2.5 px-2 w-10">No</th>
+                                <th class="py-2.5 px-2 min-w-[210px]">Nama Pelanggan</th>
+                                <th class="py-2.5 px-2 min-w-[120px]">No. Faktur</th>
+                                <th class="py-2.5 px-2 min-w-[115px]">Tgl. Faktur</th>
+                                <th class="py-2.5 px-2 min-w-[120px] text-right">Nilai Faktur</th>
+                                <th class="py-2.5 px-2 min-w-[110px] text-right">Cash</th>
+                                <th class="py-2.5 px-2 min-w-[110px] text-right">Nilai Giro</th>
+                                <th class="py-2.5 px-2 min-w-[140px]">Ket Giro &amp; Tgl</th>
+                                <th class="py-2.5 px-2 min-w-[110px] text-right">Disc / Retur</th>
+                                <th class="py-2.5 px-2 min-w-[110px]">Keterangan</th>
+                                <th class="py-2.5 px-2 w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tagihan-body" class="divide-y divide-gray-200"></tbody>
+                        <tfoot>
+                            <tr class="bg-gray-50 border-t-2 border-gray-300 font-bold text-gray-800">
+                                <td colspan="4" class="tt-title py-2.5 px-2 text-right text-xs uppercase tracking-wider">Jumlah</td>
+                                <td id="tt-nilai" data-label="Nilai Faktur" class="py-2.5 px-2 text-right tabular-nums"></td>
+                                <td id="tt-cash" data-label="Cash" class="py-2.5 px-2 text-right tabular-nums"></td>
+                                <td id="tt-giro" data-label="Nilai Giro" class="py-2.5 px-2 text-right tabular-nums"></td>
+                                <td></td>
+                                <td id="tt-disc" data-label="Disc / Retur" class="py-2.5 px-2 text-right tabular-nums"></td>
+                                <td colspan="2"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <div class="p-3 border-t border-gray-200 bg-gray-50 flex flex-wrap items-center justify-between gap-2">
+                    <button onclick="tambahBarisTagihan()" class="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold px-3 py-2 rounded-lg transition flex items-center">
+                        <i class="fa-solid fa-plus mr-1.5"></i> Tambah Baris
+                    </button>
+                    <button onclick="kosongkanTagihan()" id="tagihan-kosongkan" class="text-xs text-red-600 hover:bg-red-50 font-semibold px-3 py-2 rounded-lg transition flex items-center">
+                        <i class="fa-solid fa-eraser mr-1.5"></i> Kosongkan Semua
+                    </button>
                 </div>
             </div>
         </section>
@@ -699,6 +790,9 @@
         </div>
     </div>
 
+    <!-- Dropdown autocomplete pelanggan tagihan (dipakai bersama semua baris) -->
+    <div id="tagihan-dropdown" class="hidden fixed z-[70] bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto"></div>
+
     <!-- Footer -->
     <footer class="bg-white border-t border-gray-200 py-4 text-center text-xs text-gray-500 mt-auto">
         &copy; 2026 Aplikasi Pesanan Salesman
@@ -708,8 +802,8 @@
 
     <!-- Script Utama -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-    <script src="config.js?v=20261114b"></script>
-    <script src="script.js?v=20261114b"></script>
+    <script src="config.js?v=20261114d"></script>
+    <script src="script.js?v=20261114d"></script>
     <script>
         // Daftarkan service worker agar aplikasi bisa dipasang (PWA / APK).
         if ('serviceWorker' in navigator) {

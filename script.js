@@ -372,6 +372,7 @@ function applyRole() {
 async function logout() {
     currentUser = null;
     userList = []; produkList = []; pelangganList = []; pesananList = [];
+    tagihanInit = false; tagihanIsDirty = false; tagihanLoadedDate = ''; tagihanLoadFailed = false; tagihanLoadSeq++;
     try { if (sb) await sb.auth.signOut(); } catch (e) { /* abaikan */ }
     ['modal-pesanan', 'modal-produk', 'modal-pelanggan', 'modal-whatsapp', 'modal-pengguna', 'modal-password']
         .forEach(id => byId(id).classList.add('hidden'));
@@ -670,6 +671,7 @@ function switchTab(tabId) {
         }
     }
     if (tabId === 'pengguna') renderPengguna();
+    if (tabId === 'tagihan') initTagihan();
 }
 
 function formatRupiah(num) {
@@ -2329,6 +2331,727 @@ document.addEventListener('click', function (e) {
         }
     });
 });
+
+// ================= TAGIHAN HARIAN =================
+// Laporan Penerimaan Tagihan Harian: satu laporan per pengguna per tanggal (tabel Supabase: tagihan_harian).
+// Autocomplete pelanggan memakai pelangganList yang difilter berdasarkan Wilayah/Area (default: area pengguna).
+const TAGIHAN_MIN_ROWS = 10;      // baris kosong awal di layar
+const TAGIHAN_A5_BATAS = 20;      // jumlah toko kurang dari ini -> PDF kertas A5, selain itu A4
+const TAGIHAN_ROWS_A4 = 35;       // jumlah baris minimal pada lembar A4
+const TAGIHAN_ROWS_A5 = 15;       // jumlah baris minimal pada lembar A5
+const TAGIHAN_KODE = ['SMS', 'WM', 'MSJ'];
+const TAGIHAN_COLS = ['nama', 'noFaktur', 'tglFaktur', 'nilai', 'cash', 'giro', 'ketGiro', 'disc', 'ket'];
+const TAGIHAN_NUM = ['nilai', 'cash', 'giro', 'disc'];
+const TAGIHAN_LABEL = { nama: 'Nama Pelanggan', noFaktur: 'No. Faktur', tglFaktur: 'Tgl. Faktur (dd/mm/yyyy)', nilai: 'Nilai Faktur', cash: 'Cash', giro: 'Nilai Giro', ketGiro: 'Ket Giro & Tgl', disc: 'Disc / Retur', ket: 'Keterangan' };
+const TAGIHAN_MSG_TABEL = 'Tabel/kolom tagihan_harian belum lengkap di database. Jalankan supabase/migrasi_tagihan.sql pada Supabase SQL Editor, lalu muat ulang halaman.';
+
+let tagihanInit = false;
+let tagihanIsDirty = false;
+let tagihanLoadedDate = '';
+let tagihanLoadFailed = false;
+let tagihanSaving = false;
+let tagihanLoadSeq = 0;
+let tagihanDdInput = null;
+let tagihanDdItems = [];
+let tagihanDdIndex = -1;
+
+const tgDigits = (s) => String(s || '').replace(/\D/g, '');
+const tgGroup = (d) => d.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const tgFmtNum = (v) => tgGroup(tgDigits(v).replace(/^0+(?=\d)/, ''));
+
+// Topeng tanggal dd/mm/yyyy: hanya angka, garis miring ditambah otomatis.
+function tgMaskTgl(v) {
+    const d = tgDigits(v).slice(0, 8);
+    let out = d.slice(0, 2);
+    if (d.length > 2) out += '/' + d.slice(2, 4);
+    if (d.length > 4) out += '/' + d.slice(4);
+    return out;
+}
+
+function tgTglValid(s) {
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+    if (!m) return false;
+    const d = +m[1], mo = +m[2], y = +m[3];
+    if (y < 2000 || y > 2100) return false;
+    const dt = new Date(y, mo - 1, d);
+    return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d;
+}
+
+function tgBody() { return byId('tagihan-body'); }
+
+function tgRowHtml(no, data) {
+    data = data || {};
+    const val = (k) => TAGIHAN_NUM.includes(k) ? esc(tgFmtNum(data[k])) : esc(data[k] || '');
+    const inp = (k, extra) => `<input type="text" class="tg-in${TAGIHAN_NUM.includes(k) ? ' tg-num' : ''}" data-k="${k}" value="${val(k)}" autocomplete="off" aria-label="${esc(TAGIHAN_LABEL[k])} baris ${no}" ${extra || ''}>`;
+    return `<tr data-pid="${esc(data.pelangganId || '')}">
+        <td data-label="No" class="tg-no py-1.5 px-2 text-gray-500 text-xs align-middle">${no}</td>
+        <td data-label="Nama Pelanggan" class="tg-span2 py-1.5 px-1">${inp('nama', 'enterkeyhint="next" placeholder="Ketik nama toko..."')}</td>
+        <td data-label="No. Faktur" class="py-1.5 px-1">${inp('noFaktur', 'enterkeyhint="next"')}</td>
+        <td data-label="Tgl. Faktur" class="py-1.5 px-1">${inp('tglFaktur', 'inputmode="numeric" maxlength="10" placeholder="dd/mm/yyyy" enterkeyhint="next"')}</td>
+        <td data-label="Nilai Faktur" class="py-1.5 px-1">${inp('nilai', 'inputmode="numeric" enterkeyhint="next"')}</td>
+        <td data-label="Cash" class="py-1.5 px-1">${inp('cash', 'inputmode="numeric" enterkeyhint="next"')}</td>
+        <td data-label="Nilai Giro" class="py-1.5 px-1">${inp('giro', 'inputmode="numeric" enterkeyhint="next"')}</td>
+        <td data-label="Ket Giro & Tgl" class="py-1.5 px-1">${inp('ketGiro', 'enterkeyhint="next"')}</td>
+        <td data-label="Disc / Retur" class="py-1.5 px-1">${inp('disc', 'inputmode="numeric" enterkeyhint="next"')}</td>
+        <td data-label="Keterangan" class="py-1.5 px-1">${inp('ket', 'enterkeyhint="next"')}</td>
+        <td class="tg-del py-1.5 px-1 text-center align-middle"><button type="button" data-del title="Hapus baris" aria-label="Hapus baris ${no}" class="text-gray-400 hover:text-red-600 p-1.5"><i class="fa-solid fa-xmark"></i></button></td>
+    </tr>`;
+}
+
+function tgRenderRows(list) {
+    const rows = (list || []).slice();
+    while (rows.length < TAGIHAN_MIN_ROWS) rows.push({});
+    tgBody().innerHTML = rows.map((r, i) => tgRowHtml(i + 1, r)).join('');
+    tgTotals();
+    tgUpdatePaper();
+}
+
+function tgRenumber() {
+    tgBody().querySelectorAll('tr').forEach((tr, i) => {
+        tr.querySelector('.tg-no').textContent = i + 1;
+    });
+}
+
+function tambahBarisTagihan() {
+    const body = tgBody();
+    const n = body.querySelectorAll('tr').length + 1;
+    body.insertAdjacentHTML('beforeend', tgRowHtml(n, {}));
+    const first = body.lastElementChild.querySelector('[data-k="nama"]');
+    if (first) first.focus();
+    tagihanDirty();
+}
+
+function tgCollect() {
+    return Array.from(tgBody().querySelectorAll('tr')).map(tr => {
+        const o = { pelangganId: tr.dataset.pid || '' };
+        tr.querySelectorAll('[data-k]').forEach(el => {
+            const k = el.dataset.k;
+            o[k] = TAGIHAN_NUM.includes(k) ? tgDigits(el.value) : el.value.trim();
+        });
+        return o;
+    });
+}
+const tgHasData = (o) => TAGIHAN_COLS.some(k => o[k]);
+
+function tgTotals() {
+    const sum = { nilai: 0, cash: 0, giro: 0, disc: 0 };
+    tgBody().querySelectorAll('tr').forEach(tr => {
+        TAGIHAN_NUM.forEach(k => {
+            const el = tr.querySelector(`[data-k="${k}"]`);
+            if (el) sum[k] += Number(tgDigits(el.value)) || 0;
+        });
+    });
+    byId('tt-nilai').textContent = tgGroup(String(sum.nilai));
+    byId('tt-cash').textContent = tgGroup(String(sum.cash));
+    byId('tt-giro').textContent = tgGroup(String(sum.giro));
+    byId('tt-disc').textContent = tgGroup(String(sum.disc));
+    return sum;
+}
+
+function tagihanDirty() {
+    tagihanIsDirty = true;
+    tgUpdatePaper();
+    if (!tagihanLoadFailed) tgStatus('Ada perubahan yang belum disimpan.', 'amber');
+}
+
+function tgStatus(msg, tone) {
+    const el = byId('tagihan-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'text-xs mt-0.5 ' + (tone === 'red' ? 'text-red-600' : tone === 'amber' ? 'text-amber-600' : tone === 'green' ? 'text-emerald-600' : 'text-gray-500');
+}
+
+function tgError(err, action) {
+    console.error(err);
+    const msg = (err && err.message) ? err.message : String(err);
+    const noTable = (err && (err.code === '42P01' || err.code === 'PGRST205')) || (/tagihan_harian|kode/i.test(msg) && /exist|schema cache|column/i.test(msg));
+    return noTable ? TAGIHAN_MSG_TABEL : ('Gagal ' + action + ': ' + msg);
+}
+
+// ---- Autocomplete pelanggan (berdasarkan area) ----
+function tgPelangganPool() {
+    const area = (byId('tagihan-wilayah').value || '').trim().toLowerCase();
+    const pool = pelangganList.filter(c => !area || (c.area || '').trim().toLowerCase() === area);
+    return pool.sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+}
+
+function tgUpdateHint() {
+    const el = byId('tagihan-hint');
+    if (!el) return;
+    const area = (byId('tagihan-wilayah').value || '').trim();
+    const n = tgPelangganPool().length;
+    let msg, warn = false;
+    if (!area) msg = `Wilayah kosong, jadi saran nama menampilkan semua ${pelangganList.length} pelanggan.`;
+    else if (n === 0) { msg = `Tidak ada pelanggan dengan area "${area}". Samakan Wilayah di atas dengan area pada data pelanggan (nama bisa tetap diketik manual).`; warn = true; }
+    else msg = `Saran nama diambil dari ${n} pelanggan di area ${area}.`;
+    el.textContent = msg;
+    el.className = 'text-xs px-1 ' + (warn ? 'text-amber-600' : 'text-gray-500');
+}
+
+function tagihanWilayahDiubah() {
+    tgUpdateHint();
+    tagihanDirty();
+}
+
+function tgDdHide() {
+    const dd = byId('tagihan-dropdown');
+    if (dd) dd.classList.add('hidden');
+    tagihanDdItems = []; tagihanDdIndex = -1; tagihanDdInput = null;
+}
+
+function tgDdHighlight() {
+    const dd = byId('tagihan-dropdown');
+    Array.from(dd.children).forEach((el, i) => {
+        el.classList.toggle('bg-emerald-50', i === tagihanDdIndex);
+        if (i === tagihanDdIndex) el.scrollIntoView({ block: 'nearest' });
+    });
+}
+
+function tgDdShow(input) {
+    const dd = byId('tagihan-dropdown');
+    const kw = input.value.toLowerCase().trim();
+    const pool = tgPelangganPool();
+    const hit = (kw ? pool.filter(c => c.nama.toLowerCase().includes(kw) || (c.alamat || '').toLowerCase().includes(kw)) : pool).slice(0, 30);
+    tagihanDdInput = input;
+    tagihanDdItems = hit;
+    tagihanDdIndex = -1;
+
+    if (!hit.length) {
+        dd.innerHTML = `<div class="p-2.5 text-xs text-gray-400">${pool.length ? 'Tidak ada pelanggan cocok. Nama boleh tetap diketik manual.' : 'Belum ada pelanggan di area ini.'}</div>`;
+    } else {
+        dd.innerHTML = hit.map((c, i) => `<div data-i="${i}" class="p-2.5 hover:bg-emerald-50 cursor-pointer text-xs border-b border-gray-100"><div class="font-bold text-gray-800">${esc(c.nama)}</div><div class="text-gray-500">${esc(c.alamat || c.hp || '')}</div></div>`).join('');
+    }
+
+    const r = input.getBoundingClientRect();
+    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const below = vh - r.bottom, above = r.top;
+    dd.style.left = Math.max(4, Math.min(r.left, window.innerWidth - 4 - Math.max(r.width, 240))) + 'px';
+    dd.style.width = Math.max(r.width, 240) + 'px';
+    if (below < 180 && above > below) {
+        dd.style.top = 'auto';
+        dd.style.bottom = (window.innerHeight - r.top + 2) + 'px';
+        dd.style.maxHeight = Math.min(224, above - 8) + 'px';
+    } else {
+        dd.style.bottom = 'auto';
+        dd.style.top = (r.bottom + 2) + 'px';
+        dd.style.maxHeight = Math.min(224, below - 8) + 'px';
+    }
+    dd.classList.remove('hidden');
+}
+
+function tgDdPick(i) {
+    const c = tagihanDdItems[i];
+    const input = tagihanDdInput;
+    if (!c || !input) return;
+    input.value = c.nama;
+    input.closest('tr').dataset.pid = c.id;
+    tgDdHide();
+    tagihanDirty();
+    const next = input.closest('tr').querySelector('[data-k="noFaktur"]');
+    if (next) next.focus();
+}
+
+// ---- Navigasi keyboard / event tabel ----
+function tgFocusCell(tr, k) {
+    const el = tr && tr.querySelector(`[data-k="${k}"]`);
+    if (el) { el.focus(); if (el.select) { try { el.select(); } catch (e) { /* abaikan */ } } }
+    return !!el;
+}
+
+let tagihanEventsBound = false;   // pendengar event dipasang sekali saja (tidak ikut direset saat logout)
+
+function tgInitEvents() {
+    if (tagihanEventsBound) return;
+    tagihanEventsBound = true;
+    const body = tgBody();
+
+    body.addEventListener('input', (e) => {
+        const el = e.target;
+        if (!el.dataset || !el.dataset.k) return;
+        const k = el.dataset.k;
+        if (k === 'tglFaktur') {
+            el.value = tgMaskTgl(el.value);
+            el.classList.remove('tg-bad');
+        } else if (TAGIHAN_NUM.includes(k)) {
+            const pos = el.selectionStart == null ? el.value.length : el.selectionStart;
+            const before = tgDigits(el.value.slice(0, pos)).length;
+            el.value = tgFmtNum(el.value);
+            let cnt = 0, p = 0;
+            while (p < el.value.length && cnt < before) { if (/\d/.test(el.value.charAt(p))) cnt++; p++; }
+            try { el.setSelectionRange(p, p); } catch (x) { /* abaikan */ }
+            tgTotals();
+        } else if (k === 'nama') {
+            const tr = el.closest('tr');
+            const c = pelangganList.find(x => x.id === tr.dataset.pid);
+            if (c && c.nama !== el.value) tr.dataset.pid = '';
+            tgDdShow(el);
+        }
+        tagihanDirty();
+    });
+
+    body.addEventListener('focusin', (e) => {
+        const el = e.target;
+        if (!el.dataset || !el.dataset.k) return;
+        if (el.dataset.k === 'nama') tgDdShow(el); else tgDdHide();
+        if (el.tagName === 'INPUT') setTimeout(() => { try { el.select(); } catch (x) { /* abaikan */ } }, 0);
+    });
+
+    body.addEventListener('focusout', (e) => {
+        const el = e.target;
+        if (!el.dataset || el.dataset.k !== 'tglFaktur') return;
+        let v = el.value;
+        const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(v);       // 12/11/26 -> 12/11/2026
+        if (m) { v = `${m[1]}/${m[2]}/20${m[3]}`; el.value = v; }
+        el.classList.toggle('tg-bad', !!v && !tgTglValid(v));
+    });
+
+    body.addEventListener('keydown', (e) => {
+        const el = e.target;
+        if (!el.dataset || !el.dataset.k || el.tagName === 'SELECT') return;
+        const k = el.dataset.k;
+        const tr = el.closest('tr');
+
+        if (k === 'nama' && !byId('tagihan-dropdown').classList.contains('hidden') && tagihanDdItems.length) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); tagihanDdIndex = Math.min(tagihanDdIndex + 1, tagihanDdItems.length - 1); tgDdHighlight(); return; }
+            if (e.key === 'ArrowUp') { e.preventDefault(); tagihanDdIndex = Math.max(tagihanDdIndex - 1, 0); tgDdHighlight(); return; }
+            if (e.key === 'Enter' && tagihanDdIndex >= 0) { e.preventDefault(); tgDdPick(tagihanDdIndex); return; }
+        }
+        if (k === 'nama' && e.key === 'Escape') { tgDdHide(); return; }
+
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            tgDdHide();
+            const idx = TAGIHAN_COLS.indexOf(k);
+            if (idx < TAGIHAN_COLS.length - 1) { tgFocusCell(tr, TAGIHAN_COLS[idx + 1]); return; }
+            if (!tr.nextElementSibling) tambahBarisTagihan(); else tgFocusCell(tr.nextElementSibling, 'nama');
+            return;
+        }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const target = e.key === 'ArrowDown' ? tr.nextElementSibling : tr.previousElementSibling;
+            if (target) tgFocusCell(target, k);
+        }
+    });
+
+    body.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-del]');
+        if (!btn) return;
+        const tr = btn.closest('tr');
+        if (tgBody().querySelectorAll('tr').length <= 1) {
+            tr.querySelectorAll('[data-k]').forEach(el => { el.value = ''; });
+            tr.dataset.pid = '';
+        } else {
+            tr.remove();
+            tgRenumber();
+        }
+        tgTotals();
+        tagihanDirty();
+    });
+
+    const dd = byId('tagihan-dropdown');
+    dd.addEventListener('mousedown', (e) => e.preventDefault());   // jaga fokus input
+    dd.addEventListener('click', (e) => {
+        const item = e.target.closest('[data-i]');
+        if (item) tgDdPick(Number(item.dataset.i));
+    });
+
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('#tagihan-dropdown') || (e.target.dataset && e.target.dataset.k === 'nama')) return;
+        tgDdHide();
+    });
+    window.addEventListener('scroll', (e) => {
+        if (e.target && e.target.id === 'tagihan-dropdown') return;
+        tgDdHide();
+    }, true);
+    window.addEventListener('resize', tgDdHide);
+    window.addEventListener('beforeunload', (e) => {
+        if (currentUser && tagihanIsDirty) { e.preventDefault(); e.returnValue = ''; }
+    });
+}
+
+// ---- Muat & simpan ----
+function tgToday() { return toLocalDateStr(new Date()); }
+
+function tgDefaults() {
+    return {
+        wilayah: (currentUser && currentUser.area) || '',
+        salesman: (currentUser && (currentUser.nama || currentUser.username)) || ''
+    };
+}
+
+function initTagihan() {
+    if (!tagihanInit) {
+        tagihanInit = true;
+        tgInitEvents();
+        byId('tagihan-tanggal').value = tgToday();
+        muatTagihan();
+        return;
+    }
+    tgUpdateHint();   // data pelanggan mungkin baru disegarkan; jangan timpa isian yang belum disimpan
+}
+
+async function muatTagihan() {
+    const dateEl = byId('tagihan-tanggal');
+    const tgl = dateEl.value;
+    if (!tgl) { dateEl.value = tagihanLoadedDate || tgToday(); return; }
+    if (tagihanIsDirty && tgl !== tagihanLoadedDate &&
+        !confirm('Perubahan yang belum disimpan akan hilang. Lanjut ganti tanggal?')) {
+        dateEl.value = tagihanLoadedDate;
+        return;
+    }
+    const seq = ++tagihanLoadSeq;
+    const simpan = byId('tagihan-simpan');
+    simpan.disabled = true;
+    tgStatus('Memuat laporan...');
+
+    let rec = null, failMsg = '';
+    try {
+        const { data, error } = await sb.from('tagihan_harian').select('*')
+            .eq('owner_id', currentUser.id).eq('tanggal', tgl).maybeSingle();
+        if (error) throw error;
+        rec = data;
+    } catch (err) {
+        failMsg = tgError(err, 'memuat laporan tagihan');
+    }
+    if (seq !== tagihanLoadSeq) return;   // ada pemuatan yang lebih baru
+
+    const def = tgDefaults();
+    tagihanLoadedDate = tgl;
+    tagihanLoadFailed = !!failMsg;
+    tagihanIsDirty = false;
+    byId('tagihan-wilayah').value = rec ? (rec.wilayah || '') : def.wilayah;
+    tgKodeSet(rec ? rec.kode : '');
+    byId('tagihan-salesman').value = rec ? (rec.salesman || '') : def.salesman;
+    tgRenderRows(rec && Array.isArray(rec.rows) ? rec.rows : []);
+    tgUpdateHint();
+
+    if (failMsg) {
+        // Simpan dikunci agar laporan yang sudah ada di server tidak tertimpa lembar kosong.
+        simpan.disabled = true;
+        tgStatus(failMsg + ' Ganti tanggal atau buka ulang menu ini untuk mencoba lagi.', 'red');
+        tagihanInit = true;
+        return;
+    }
+    simpan.disabled = false;
+    tgStatus(rec ? 'Laporan tersimpan dimuat. Ubah lalu klik Simpan.' : 'Laporan baru untuk tanggal ini.');
+}
+
+async function simpanTagihan() {
+    if (tagihanSaving || tagihanLoadFailed || !currentUser) return;
+    const all = tgCollect();
+    const trs = tgBody().querySelectorAll('tr');
+    for (let i = 0; i < all.length; i++) {
+        if (all[i].tglFaktur && !tgTglValid(all[i].tglFaktur)) {
+            alert(`Tanggal faktur pada baris ${i + 1} tidak valid. Gunakan format dd/mm/yyyy, contoh 05/11/2026.`);
+            const el = trs[i].querySelector('[data-k="tglFaktur"]');
+            el.classList.add('tg-bad'); el.focus();
+            return;
+        }
+    }
+    const rows = all.filter(tgHasData);
+    const tgl = byId('tagihan-tanggal').value;
+    const wilayah = byId('tagihan-wilayah').value.trim();
+    const salesman = byId('tagihan-salesman').value.trim();
+    const kode = tgKodeGet();
+
+    tagihanSaving = true;
+    const btn = byId('tagihan-simpan');
+    btn.disabled = true;
+    tgStatus('Menyimpan...');
+    try {
+        if (!rows.length) {
+            const { error } = await sb.from('tagihan_harian').delete().eq('owner_id', currentUser.id).eq('tanggal', tgl);
+            if (error) throw error;
+        } else {
+            const { error } = await sb.from('tagihan_harian').upsert(
+                { owner_id: currentUser.id, tanggal: tgl, kode, wilayah, salesman, rows, updated_at: new Date().toISOString() },
+                { onConflict: 'owner_id,tanggal' });
+            if (error) throw error;
+        }
+        tagihanIsDirty = false;
+        const t = new Date();
+        tgStatus(rows.length ? `Tersimpan pukul ${pad2(t.getHours())}:${pad2(t.getMinutes())}.` : 'Laporan kosong, tidak ada yang disimpan.', 'green');
+    } catch (err) {
+        tgStatus(tgError(err, 'menyimpan laporan tagihan'), 'red');
+    } finally {
+        tagihanSaving = false;
+        btn.disabled = false;
+    }
+}
+
+function kosongkanTagihan() {
+    if (!confirm('Kosongkan semua baris pada layar? Data di server baru berubah setelah Anda klik Simpan.')) return;
+    tgRenderRows([]);
+    tagihanDirty();
+}
+
+// ---- Simpan PDF: A5 bila toko < TAGIHAN_A5_BATAS, selain itu A4 (portrait) ----
+function tgPaper(count) {
+    return count < TAGIHAN_A5_BATAS
+        ? { nama: 'A5', land: true, w: 210, h: 148, m: 5, cols: [7, 38, 36, 21, 19, 19, 22, 16, 20], pt: 7, ptHead: 6.5, ptTitle: 10, ptMeta: 8, titleH: 6.5, metaH: 5, rowH: 4.6, headH: 4, footH: 12, signH: 6, salesW: 50, sigW: 70, minRows: TAGIHAN_ROWS_A5 }
+        : { nama: 'A4', w: 210, h: 297, m: 8, cols: [7, 34, 36, 21, 19, 19, 22, 16, 20], pt: 8, ptHead: 7.5, ptTitle: 11, ptMeta: 9, titleH: 9, metaH: 7, rowH: 6, headH: 5, footH: 22, signH: 13, salesW: 70, sigW: 98, minRows: TAGIHAN_ROWS_A4 };
+}
+
+function tgUpdatePaper() {
+    const el = byId('tagihan-paper');
+    if (!el) return;
+    const n = tgCollect().filter(tgHasData).length;
+    el.textContent = `Simpan PDF: kertas ${tgPaper(n).nama}${tgPaper(n).land ? ' landscape' : ''} (${n} toko; A5 bila kurang dari ${TAGIHAN_A5_BATAS} toko)`;
+}
+
+// Satu halaman laporan -> canvas
+function tgDrawPage(p, info, rows, chunk, sum, pageNo, pageCount, k) {
+    const c = newCanvas(p.w, p.h, k);
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = '#111';
+    ctx.strokeStyle = '#4a4a4a';
+    ctx.lineWidth = 0.25 * k;
+
+    const px = (pt) => pt * PT * k;
+    const font = (size, bold) => `${bold ? 'bold ' : ''}${size}px ${NOTA_FONT}`;
+    const X = p.m, W = p.w - 2 * p.m;
+    const xs = [];
+    p.cols.reduce((acc, w, i) => { xs[i] = acc; return acc + w; }, X);
+
+    // teks yang mengecil otomatis bila tidak muat (batas bawah minScale), sisanya dipotong
+    const cell = (x, y, w, h, text, o = {}) => {
+        ctx.strokeRect(x * k, y * k, w * k, h * k);
+        if (!text) return;
+        const pad = 1;
+        let size = px(o.pt || p.pt);
+        ctx.font = font(size, o.bold);
+        const maxW = (w - 2 * pad) * k;
+        const floor = size * (o.minScale || 0.75);
+        while (ctx.measureText(text).width > maxW && size > floor) { size *= 0.95; ctx.font = font(size, o.bold); }
+        ctx.save();
+        ctx.beginPath(); ctx.rect(x * k, y * k, w * k, h * k); ctx.clip();
+        ctx.textBaseline = 'middle';
+        const cy = (y + h / 2) * k + 0.15 * k;
+        if (o.align === 'right') { ctx.textAlign = 'right'; ctx.fillText(text, (x + w - pad) * k, cy); }
+        else if (o.align === 'center') { ctx.textAlign = 'center'; ctx.fillText(text, (x + w / 2) * k, cy); }
+        else { ctx.textAlign = 'left'; ctx.fillText(text, (x + pad) * k, cy); }
+        ctx.restore();
+    };
+
+    let y = p.m;
+
+    // judul
+    ctx.font = font(px(p.ptTitle));
+    if ('letterSpacing' in ctx) ctx.letterSpacing = (0.04 * px(p.ptTitle)) + 'px';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('LAPORAN PENERIMAAN TAGIHAN HARIAN', p.w / 2 * k, (y + p.titleH / 2) * k);
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    y += p.titleH;
+
+    // baris meta (Kode, Tanggal, Wilayah, Salesman)
+    const segs = [];
+    if (info.kode) segs.push(['Kode :', info.kode]);
+    segs.push(['TANGGAL :', info.tglTxt], ['Wilayah :', info.wilayah], ['Salesman :', info.salesman]);
+    const gap = 6 * k;
+    let msize = px(p.ptMeta);
+    const measure = () => segs.reduce((t, s) => {
+        ctx.font = font(msize, true); const a = ctx.measureText(s[0] + ' ').width;
+        ctx.font = font(msize, false); return t + a + ctx.measureText(s[1]).width;
+    }, 0) + gap * (segs.length - 1);
+    while (measure() > W * k && msize > px(p.ptMeta) * 0.6) msize *= 0.95;
+    let mx = (p.w * k - measure()) / 2;
+    ctx.textAlign = 'left';
+    segs.forEach(s => {
+        ctx.font = font(msize, true);
+        ctx.fillText(s[0] + ' ', mx, (y + p.metaH / 2) * k);
+        mx += ctx.measureText(s[0] + ' ').width;
+        ctx.font = font(msize, false);
+        ctx.fillText(s[1], mx, (y + p.metaH / 2) * k);
+        mx += ctx.measureText(s[1]).width + gap;
+    });
+    y += p.metaH;
+
+    // kepala tabel
+    const hh = p.headH, cw = p.cols;
+    const hc = { align: 'center', pt: p.ptHead, minScale: 0.5 };
+    ['No.', 'Nama Pelanggan', 'No & Tgl. Faktur', 'Nilai Faktur'].forEach((t, i) => cell(xs[i], y, cw[i], hh * 2, t, hc));
+    cell(xs[4], y, cw[4] + cw[5] + cw[6], hh, 'Pembayaran', hc);
+    cell(xs[4], y + hh, cw[4], hh, 'Cash', hc);
+    cell(xs[5], y + hh, cw[5], hh, 'Nilai Giro', hc);
+    cell(xs[6], y + hh, cw[6], hh, 'Ket Giro & Tgl', hc);
+    cell(xs[7], y, cw[7], hh * 2, 'Disc / Retur', hc);
+    cell(xs[8], y, cw[8], hh * 2, 'Keterangan', hc);
+    y += hh * 2;
+
+    // isi tabel
+    const num = (v) => v ? tgGroup(String(Number(v))) : '';
+    for (let n = chunk.from; n < chunk.to; n++) {
+        const r = rows[n] || {};
+        const faktur = [r.noFaktur, r.tglFaktur].filter(Boolean).join('  ');
+        cell(xs[0], y, cw[0], p.rowH, `${n + 1}.`, { align: 'right', pt: p.pt - 0.5 });
+        cell(xs[1], y, cw[1], p.rowH, r.nama || '');
+        cell(xs[2], y, cw[2], p.rowH, faktur);
+        cell(xs[3], y, cw[3], p.rowH, num(r.nilai), { align: 'right' });
+        cell(xs[4], y, cw[4], p.rowH, num(r.cash), { align: 'right' });
+        cell(xs[5], y, cw[5], p.rowH, num(r.giro), { align: 'right' });
+        cell(xs[6], y, cw[6], p.rowH, r.ketGiro || '');
+        cell(xs[7], y, cw[7], p.rowH, num(r.disc), { align: 'right' });
+        cell(xs[8], y, cw[8], p.rowH, r.ket || '');
+        y += p.rowH;
+    }
+
+    if (chunk.last) {
+        const tot = (v) => v ? tgGroup(String(v)) : '';
+        const b = { bold: true, align: 'right' };
+        cell(xs[0], y, cw[0] + cw[1] + cw[2], p.rowH, 'JUMLAH', b);
+        cell(xs[3], y, cw[3], p.rowH, tot(sum.nilai), b);
+        cell(xs[4], y, cw[4], p.rowH, tot(sum.cash), b);
+        cell(xs[5], y, cw[5], p.rowH, tot(sum.giro), b);
+        cell(xs[6], y, cw[6], p.rowH, '');
+        cell(xs[7], y, cw[7], p.rowH, tot(sum.disc), b);
+        cell(xs[8], y, cw[8], p.rowH, '');
+        y += p.rowH;
+
+        // tanda tangan
+        const fy = y + 4;
+        ctx.font = font(px(p.ptHead)); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillText('Salesman / Pengambil Faktur', X * k, (fy + 1.5) * k);
+        let nsize = px(p.ptMeta);
+        const nm = `( ${info.salesman} )`;
+        ctx.font = font(nsize);
+        while (ctx.measureText(nm).width > p.salesW * k && nsize > px(p.ptMeta) * 0.6) { nsize *= 0.95; ctx.font = font(nsize); }
+        ctx.textAlign = 'center';
+        ctx.fillText(nm, (X + p.salesW / 2) * k, (fy + 3 + p.signH + 3) * k);
+
+        const sx = X + W - p.sigW, sw = p.sigW / 3;
+        ['Kasir', 'Accounting', 'Diperiksa Oleh'].forEach((t, i) => {
+            cell(sx + i * sw, fy, sw, hh, t, { align: 'center', pt: p.ptHead, minScale: 0.6 });
+            cell(sx + i * sw, fy + hh, sw, p.signH + 2, '');
+        });
+    }
+
+    if (pageCount > 1) {
+        ctx.font = font(px(p.ptHead)); ctx.fillStyle = '#555'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText(`Hal. ${pageNo} / ${pageCount}`, (p.w - p.m) * k, (p.h - p.m / 2) * k);
+    }
+    return c;
+}
+
+// PDF sederhana tanpa library: tiap halaman berisi satu gambar JPEG penuh, ukuran halaman bebas (mm).
+function tgBuildPdf(pages, wMm, hMm) {
+    const PW = +(wMm * 72 / 25.4).toFixed(2), PH = +(hMm * 72 / 25.4).toFixed(2);
+    const enc = new TextEncoder();
+    const parts = [];
+    const offsets = [];
+    let pos = 0;
+    const add = (x) => { const b = typeof x === 'string' ? enc.encode(x) : x; parts.push(b); pos += b.length; };
+    const obj = (n, fn) => { offsets[n] = pos; add(`${n} 0 obj\n`); fn(); add('\nendobj\n'); };
+
+    const total = 2 + pages.length * 3;
+    add('%PDF-1.4\n');
+    obj(1, () => add('<< /Type /Catalog /Pages 2 0 R >>'));
+    obj(2, () => add(`<< /Type /Pages /Count ${pages.length} /Kids [${pages.map((_, i) => `${3 + i * 3} 0 R`).join(' ')}] >>`));
+    pages.forEach((pg, i) => {
+        const po = 3 + i * 3, co = po + 1, io = po + 2;
+        obj(po, () => add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /XObject << /Im0 ${io} 0 R >> >> /Contents ${co} 0 R >>`));
+        const content = `q ${PW} 0 0 ${PH} 0 0 cm /Im0 Do Q`;
+        obj(co, () => add(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
+        obj(io, () => {
+            add(`<< /Type /XObject /Subtype /Image /Width ${pg.w} /Height ${pg.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pg.jpeg.length} >>\nstream\n`);
+            add(pg.jpeg);
+            add('\nendstream');
+        });
+    });
+    const xrefPos = pos;
+    add(`xref\n0 ${total + 1}\n0000000000 65535 f \n`);
+    for (let n = 1; n <= total; n++) add(String(offsets[n]).padStart(10, '0') + ' 00000 n \n');
+    add(`trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`);
+    return new Blob(parts, { type: 'application/pdf' });
+}
+
+let tagihanPdfBusy = false;
+
+async function simpanPdfTagihan() {
+    if (tagihanPdfBusy) return;
+    const data = tgCollect().filter(tgHasData);
+    if (!data.length) { alert('Belum ada data tagihan untuk dijadikan PDF.'); return; }
+
+    const p = tgPaper(data.length);
+    const rows = data.slice();
+    while (rows.length < p.minRows) rows.push({});
+
+    const sum = { nilai: 0, cash: 0, giro: 0, disc: 0 };
+    data.forEach(r => TAGIHAN_NUM.forEach(k => { sum[k] += Number(r[k]) || 0; }));
+
+    const tgl = byId('tagihan-tanggal').value;
+    const d = new Date(tgl + 'T00:00:00');
+    const info = {
+        kode: tgKodeGet(),
+        tglTxt: isNaN(d) ? '' : d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        wilayah: byId('tagihan-wilayah').value.trim(),
+        salesman: byId('tagihan-salesman').value.trim()
+    };
+
+    // bagi baris ke halaman (kepala tabel diulang; jumlah & tanda tangan di halaman terakhir)
+    const avail = p.h - 2 * p.m - p.titleH - p.metaH - 2 * p.headH;
+    const capFull = Math.max(1, Math.floor(avail / p.rowH));
+    const capLast = Math.max(0, Math.floor((avail - p.rowH - 4 - p.footH) / p.rowH));
+    const chunks = [];
+    for (let pos = 0; ;) {
+        const remaining = rows.length - pos;
+        if (remaining <= capLast) { chunks.push({ from: pos, to: rows.length, last: true }); break; }
+        const take = Math.min(capFull, remaining);
+        chunks.push({ from: pos, to: pos + take, last: false });
+        pos += take;
+    }
+
+    const btn = byId('tagihan-pdf');
+    const label = btn.innerHTML;
+    tagihanPdfBusy = true;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Membuat PDF...';
+    try {
+        if (document.fonts && document.fonts.ready) await document.fonts.ready;
+        const k = 250 / 25.4;   // 250 dpi
+        const pages = [];
+        for (let i = 0; i < chunks.length; i++) {
+            const canvas = tgDrawPage(p, info, rows, chunks[i], sum, i + 1, chunks.length, k);
+            const blob = await canvasToBlob(canvas, 'image/jpeg', 0.92);
+            pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), w: canvas.width, h: canvas.height });
+        }
+        const safe = (s) => String(s || '').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+        const name = ['Laporan_Tagihan', tgl, safe(info.wilayah), p.nama].filter(Boolean).join('_') + '.pdf';
+        saveBlob(tgBuildPdf(pages, p.w, p.h), name);
+        tgStatus(`PDF ${p.nama} disimpan (${data.length} toko).`, 'green');
+    } catch (err) {
+        alert('Gagal membuat PDF: ' + (err && err.message ? err.message : err));
+    } finally {
+        tagihanPdfBusy = false;
+        btn.disabled = false;
+        btn.innerHTML = label;
+    }
+}
+
+// ---- Kode (dropdown SMS / WM / MSJ / tulis manual) ----
+function tgKodeGet() {
+    const sel = byId('tagihan-kode');
+    if (!sel) return '';
+    return sel.value === '__manual' ? byId('tagihan-kode-manual').value.trim() : sel.value;
+}
+
+function tgKodeSet(v) {
+    const sel = byId('tagihan-kode'), man = byId('tagihan-kode-manual');
+    v = (v || '').trim();
+    if (!v || TAGIHAN_KODE.includes(v)) { sel.value = v; man.value = ''; }
+    else { sel.value = '__manual'; man.value = v; }
+    man.classList.toggle('hidden', sel.value !== '__manual');
+}
+
+function tgKodeChanged() {
+    const sel = byId('tagihan-kode'), man = byId('tagihan-kode-manual');
+    man.classList.toggle('hidden', sel.value !== '__manual');
+    if (sel.value === '__manual') man.focus(); else man.value = '';
+    tagihanDirty();
+}
+
 
 initAuth();
 

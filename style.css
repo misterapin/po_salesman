@@ -240,3 +240,45 @@
     html.printing-nota .nota-a6 { break-after: page; page-break-after: always; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     html.printing-nota .nota-a6:last-child { break-after: auto; page-break-after: auto; }
 }
+
+
+/* ===================================================================
+   TAGIHAN HARIAN
+   =================================================================== */
+.tagihan-table .tg-in {
+    width: 100%; font-size: .8125rem; padding: .4rem .5rem;
+    border: 1px solid #e5e7eb; border-radius: .5rem; background: #fff; color: inherit;
+}
+.tagihan-table .tg-in:focus { outline: none; box-shadow: 0 0 0 2px #10B981; border-color: transparent; }
+.tagihan-table .tg-num { text-align: right; font-variant-numeric: tabular-nums; }
+.tagihan-table .tg-in.tg-bad { border-color: #dc2626; background: #fef2f2; }
+html.dark .tagihan-table .tg-in.tg-bad { background: rgba(239,68,68,.13); }
+
+@media (max-width: 639px) {
+    .tagihan-table, .tagihan-table tbody, .tagihan-table tfoot { display: block; width: 100%; }
+    .tagihan-table thead { display: none; }
+    .tagihan-table tbody tr {
+        display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .6rem;
+        padding: .8rem 1rem; position: relative;
+    }
+    .tagihan-table tbody td { display: block; padding: 0 !important; min-width: 0; text-align: left; }
+    .tagihan-table tbody td::before {
+        content: attr(data-label); display: block; margin-bottom: 2px;
+        font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #6b7280;
+    }
+    .tagihan-table tbody td.tg-span2 { grid-column: 1 / -1; }
+    .tagihan-table tbody td.tg-no { grid-column: 1 / -1; font-weight: 700; color: #10B981; padding-right: 2.5rem !important; }
+    .tagihan-table tbody td.tg-no::before { content: 'Baris '; display: inline; font-size: 12px; text-transform: none; letter-spacing: 0; color: inherit; }
+    .tagihan-table tbody td.tg-del { position: absolute; top: .45rem; right: .6rem; }
+    .tagihan-table tbody td.tg-del::before { content: none; }
+    .tagihan-table tfoot tr { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .6rem; padding: .8rem 1rem; }
+    .tagihan-table tfoot td { display: block; padding: 0 !important; text-align: left !important; }
+    .tagihan-table tfoot td::before {
+        content: attr(data-label); display: block; margin-bottom: 2px;
+        font-size: 10px; font-weight: 700; text-transform: uppercase; color: #6b7280;
+    }
+    .tagihan-table tfoot td:not([data-label]) { display: none; }
+    .tagihan-table tfoot td.tt-title { display: block; grid-column: 1 / -1; }
+    .tagihan-table tfoot td.tt-title::before { content: none; }
+}
+html.dark .tagihan-table tbody td::before, html.dark .tagihan-table tfoot td::before { color: #94a3b8; }
