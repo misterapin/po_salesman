@@ -7,6 +7,48 @@ const MAGIC_COLOR_OPTIONS = [
     "147 BALTIC WHITE", "13 - DARK GREEN", "160 TOSCA", "182 GULL YELLOW", "156 ATLANTIS BLUE", "122 ARMY GREEN", "MC 12 CANDY TONE BLUE", "MC 13 CANDY TONE GREEN", "PRIMER GREY 120"
 ];
 
+// Kode warna katalog Diton (Solid, Candytone, Metallic, Gold, Special, Chrome, Hi-Temp, Fluorescent, Primer).
+const DITON_COLOR_SOLID = [
+    "813 DEEP GREEN", "839 BLACK", "883 BLACK SEMI DOFF", "884 BLACK DOFF", "826 MEDIUM GREY", "834 LIGHT GREY", "824 DARK GREY", "8458 ULTRA WHITE",
+    "837 GRASS GREEN", "8546 PS DAKAR YELLOW", "841 YELLOW", "8459 EXECUTIVE GREY", "822 MIKROLET BLUE", "8502 INDIGO BLUE", "827 SOFT PINK", "840 WHITE",
+    "812 GOJEK GREEN", "825 CHROME YELLOW", "831 DARK YELLOW", "815 IVORY", "819 CERULEAN BLUE", "8432 SAPPHIRE BLUE", "830 ROSE PINK", "820 WHITE DOFF",
+    "8455 FRESH GREEN", "8177 SHOGUN YELLOW", "833 SUNKIST ORANGE", "847 BALTIC WHITE", "821 OCEAN BLUE", "8431 STRONG BLUE", "811 MAGENTA", "8540 CLEAR",
+    "8173 NINJA GREEN", "8548 COLT YELLOW", "814 ORANGE", "843 COKLAT MUDA", "8460 TOSCA GREEN", "828 DARK BLUE", "818 PURPLE ANGEL", "810 CLEAR DOFF",
+    "829 HINO GREEN", "823 SIGNAL RED", "886 SPECIAL RED", "838 MAROON", "845 PARADISE GREEN", "8494 BRIGHT BLUE", "8773 MADORAS BROWN", "8461 TOBACCO BROWN L300",
+    "8522 ARMY GREEN"
+];
+const DITON_COLOR_CANDY = [
+    "801 HONDA RED", "802 HONDA YELLOW", "803 HONDA BLUE", "804 YAMAHA GREEN", "805 CANDY PINK", "807 CANDY VIOLET", "808 YAMAHA RED", "809 CANDY ORANGE"
+];
+const DITON_COLOR_METALLIC = [
+    "8142 RED PURPLE", "8144 MAGENTA METALLIC", "8190 METALLIC RED", "8253 FORMICA BEIGE", "8199 METALLIC BROWN", "8265 ANTHRACITE GREY", "8198 METALLIC GREY", "8139 METALLIC BLACK",
+    "8143 BLUE PURPLE", "8176 SHOGUN GREEN", "8193 NEON GREEN", "8196 EMERALD GREEN", "8160 CARIBIC BLUE", "8511 NEON BLUE", "8174 JUPITER ORANGE", "8102 METALLIC YELLOW",
+    "8172 JUPITER BLUE", "8175 SHOGUN BLUE", "8216 CURACAO BLUE", "8580 SILVER METALLIC", "836 SILVER", "835 GOLD", "858 CLEAR METALLIC", "8239 IRON METALLIC DOFF",
+    "891 MUTIARA PUTIH", "894 MUTIARA UNGU", "895 MUTIARA HIJAU", "896 MUTIARA PINK", "897 MUTIARA BIRU", "850 BRONZE", "816 TITANIUM"
+];
+const DITON_COLOR_SPECIAL = [
+    "18KT GOLD", "24KT GOLD", "777 PERUNGGU", "888 TEMBAGA", "999 SPECIAL GOLD", "CHROME", "8020 PP PRIMER GREY"
+];
+const DITON_COLOR_HITEMP = ["HI-TEMP BLACK", "HI-TEMP SILVER", "HI-TEMP BRONZE"];
+const DITON_COLOR_FLUORESCENT = [
+    "8001 FLUORESCENT RED", "8002 FLUORESCENT PINK", "8003 FLUORESCENT GREEN", "8004 FLUORESCENT BLUE", "8005 FLUORESCENT YELLOW", "8006 FLUORESCENT ORANGE"
+];
+const DITON_COLOR_OPTIONS = [].concat(DITON_COLOR_SOLID, DITON_COLOR_CANDY, DITON_COLOR_METALLIC, DITON_COLOR_SPECIAL, DITON_COLOR_FLUORESCENT, DITON_COLOR_HITEMP);
+
+// Daftar warna sesuai produk yang dipilih di baris pesanan:
+// produk Diton -> kode Diton (Fluorescent / Hi-temp hanya warna miliknya); selain itu -> kode lama.
+function getColorOptionsForRow(row) {
+    const idVal = row ? row.querySelector('.product-id-val') : null;
+    const prod = idVal ? produkList.find(p => p.id === idVal.value) : null;
+    const nama = prod ? String(prod.nama || '').toLowerCase() : '';
+    if (nama.includes('diton')) {
+        if (nama.includes('fluorescent') || nama.includes('flourescent')) return DITON_COLOR_FLUORESCENT;
+        if (nama.includes('hi-temp') || nama.includes('hitemp')) return DITON_COLOR_HITEMP;
+        return DITON_COLOR_OPTIONS;
+    }
+    return MAGIC_COLOR_OPTIONS;
+}
+
 // ================= TEMA (TERANG / GELAP) =================
 function applyTheme(theme) {
     const dark = theme === 'dark';
@@ -1239,9 +1281,10 @@ function onVarianInput(rowId) {
 
     listDiv.innerHTML = '';
 
+    const colorOptions = getColorOptionsForRow(row);
     const matched = keyword
-        ? MAGIC_COLOR_OPTIONS.filter(col => col.toLowerCase().includes(keyword))
-        : MAGIC_COLOR_OPTIONS.slice(0, 15);
+        ? colorOptions.filter(col => col.toLowerCase().includes(keyword))
+        : colorOptions.slice(0, 15);
 
     if (matched.length === 0) {
         listDiv.innerHTML = `<div class="p-2 text-xs text-gray-400">Warna tidak ditemukan</div>`;
