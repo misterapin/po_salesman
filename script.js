@@ -293,11 +293,22 @@ async function callUsersApi(method, body) {
 
 // ================= AUTH & ROLE =================
 // Ubah daftar izin di sini bila ingin menyesuaikan hak akses tiap role.
+// tab.* = menu yang tampil; users.filter = boleh melihat/menyaring data semua pengguna;
+// laporan.aksi = tombol Tambah Pesanan, Lihat Nota & Edit langsung dari menu Laporan & Rekap.
+const TAB_SEMUA = ['tab.pesanan', 'tab.produk', 'tab.pelanggan', 'tab.laporan', 'tab.tagihan'];
 const ROLE_PERMISSIONS = {
-    admin: ['produk.write', 'pelanggan.write', 'pelanggan.delete', 'pesanan.write', 'pesanan.delete', 'backup', 'users.manage'],
-    salesman: ['pesanan.write', 'pelanggan.write']
+    admin: ['produk.write', 'pelanggan.write', 'pelanggan.delete', 'pesanan.write', 'pesanan.delete', 'backup', 'users.manage', 'users.filter', ...TAB_SEMUA],
+    salesman: ['pesanan.write', 'pelanggan.write', ...TAB_SEMUA],
+    // Kasir: hanya menu Laporan & Rekap; boleh tambah & edit pesanan semua salesman (tidak boleh hapus).
+    kasir: ['pesanan.write', 'laporan.aksi', 'users.filter', 'tab.laporan']
 };
-const ROLE_LABEL = { admin: 'Admin', salesman: 'Salesman' };
+const ROLE_LABEL = { admin: 'Admin', salesman: 'Salesman', kasir: 'Kasir' };
+
+function roleBadgeClass(role) {
+    if (role === 'admin') return 'bg-amber-100 text-amber-700';
+    if (role === 'kasir') return 'bg-sky-100 text-sky-700';
+    return 'bg-emerald-100 text-emerald-700';
+}
 
 let userList = [];
 let currentUser = null;
@@ -347,7 +358,7 @@ async function fetchProfile(userId) {
 let namaPenggunaList = [];   // untuk dropdown Nama Salesman di form pesanan
 
 async function loadUsers() {
-    if (!can('users.manage')) {
+    if (!can('users.filter')) {
         userList = []; fillUserFilters();
         namaPenggunaList = currentUser ? [currentUser] : [];
         try {   // bila kebijakan database mengizinkan, tampilkan semua pengguna
@@ -441,11 +452,10 @@ async function enterApp(user) {
     byId('user-nama').innerText = user.nama || user.username;
     const badge = byId('user-role');
     badge.innerText = ROLE_LABEL[user.role] || user.role;
-    badge.className = 'inline-block text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ' +
-        (user.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700');
+    badge.className = 'inline-block text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ' + roleBadgeClass(user.role);
 
     applyRole();
-    switchTab('pesanan');
+    switchTab(can('tab.pesanan') ? 'pesanan' : 'laporan');
 }
 
 function applyRole() {
@@ -573,7 +583,7 @@ function renderPengguna() {
     const tbody = byId('table-pengguna-body');
     tbody.innerHTML = userList.map((u, idx) => {
         const self = currentUser && u.id === currentUser.id;
-        const badge = u.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700';
+        const badge = roleBadgeClass(u.role);
         return `
             <tr class="hover:bg-gray-50 transition">
                 <td data-label="No" class="py-3 px-4 text-gray-500 font-medium">${idx + 1}</td>
@@ -688,10 +698,17 @@ function kodePengguna(username) {
     return String(username || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'USER';
 }
 
-// Nomor nota: NOTA-YYYYMMDD-KODE-NNN (urut per hari per pengguna, memakai tanggal lokal)
-function generateNoNota() {
+// Gabungkan tanggal pilihan (YYYY-MM-DD, lokal) dengan jam dari `waktu`; hasilnya string ISO.
+function tanggalPilihanKeISO(tglStr, waktu) {
+    const [y, m, d] = tglStr.split('-').map(Number);
+    const w = (waktu instanceof Date && !isNaN(waktu.getTime())) ? waktu : new Date();
+    return new Date(y, m - 1, d, w.getHours(), w.getMinutes(), w.getSeconds()).toISOString();
+}
+
+// Nomor nota: NOTA-YYYYMMDD-KODE-NNN (urut per hari per pengguna, memakai tanggal pesanan)
+function generateNoNota(tglStr) {
     const kode = kodePengguna(currentUser && currentUser.username);
-    const prefix = 'NOTA-' + toLocalDateStr(new Date()).replace(/-/g, '') + '-' + kode + '-';
+    const prefix = 'NOTA-' + (tglStr || toLocalDateStr(new Date())).replace(/-/g, '') + '-' + kode + '-';
     let max = 0;
     pesananList.forEach(o => {
         if (o.noNota && o.noNota.startsWith(prefix)) {
@@ -732,6 +749,7 @@ updateClock();
 
 function switchTab(tabId) {
     if (tabId === 'pengguna' && !can('users.manage')) return;
+    if (tabId !== 'pengguna' && !can('tab.' + tabId)) return;
     document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
     document.querySelectorAll('.tab-btn').forEach(el => {
         el.classList.remove('border-primary', 'text-primary');
@@ -1069,6 +1087,7 @@ function openModalPesanan(id = null) {
         document.getElementById('modal-pesanan-title').innerText = 'Edit Pesanan';
         const ord = pesananList.find(o => o.id === id);
         document.getElementById('pesanan-id').value = ord.id;
+        document.getElementById('pesanan-tanggal').value = toLocalDateStr(ord.tanggal);
         
         const pel = pelangganList.find(c => c.id === ord.pelangganId);
         document.getElementById('pesanan-pelanggan-id').value = '';
@@ -1088,6 +1107,7 @@ function openModalPesanan(id = null) {
     } else {
         document.getElementById('modal-pesanan-title').innerText = 'Buat Pesanan Baru';
         document.getElementById('pesanan-id').value = '';
+        document.getElementById('pesanan-tanggal').value = toLocalDateStr(new Date());
         document.getElementById('pesanan-pelanggan-id').value = '';
         document.getElementById('pesanan-pelanggan-input').value = '';
         document.getElementById('items-container').innerHTML = '';
@@ -1391,6 +1411,12 @@ async function savePesanan() {
     const noOrder = document.getElementById('pesanan-no-order').value.trim();
     const kodeSalesman = document.getElementById('pesanan-kode-salesman').value.trim();
     const pembayaran = getPembayaran();
+    const tglStr = document.getElementById('pesanan-tanggal').value || toLocalDateStr(new Date());
+    const thn = parseInt(tglStr.slice(0, 4), 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tglStr) || thn < 2000 || thn > 2100) {
+        alert('Tanggal pesanan tidak valid. Pilih tanggal yang benar.');
+        return;
+    }
 
     const rows = document.querySelectorAll('#items-container > div');
     let items = [];
@@ -1436,7 +1462,11 @@ async function savePesanan() {
         if (id) {
             const existing = pesananList.find(o => o.id === id);
             if (!existing) { alert('Pesanan tidak ditemukan. Muat ulang halaman lalu coba lagi.'); return; }
-            const updated = { ...existing, pelangganId, items, catatan, noOrder, kodeSalesman, pembayaran };
+            // Tanggal tidak berubah -> pertahankan jam aslinya; diganti -> pakai tanggal baru dengan jam asli.
+            const tanggal = (toLocalDateStr(existing.tanggal) === tglStr)
+                ? existing.tanggal
+                : tanggalPilihanKeISO(tglStr, new Date(existing.tanggal));
+            const updated = { ...existing, tanggal, pelangganId, items, catatan, noOrder, kodeSalesman, pembayaran };
             await dbUpsert('pesanan', updated);
             Object.assign(existing, updated);
         } else {
@@ -1445,8 +1475,8 @@ async function savePesanan() {
             for (let attempt = 0; attempt < 3 && !newOrd; attempt++) {
                 const cand = {
                     id: 'ord_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-                    noNota: generateNoNota(),
-                    tanggal: new Date().toISOString(),
+                    noNota: generateNoNota(tglStr),
+                    tanggal: tanggalPilihanKeISO(tglStr, new Date()),
                     pelangganId: pelangganId,
                     items: items,
                     catatan: catatan,
@@ -1473,6 +1503,7 @@ async function savePesanan() {
 
     closeModalPesanan();
     renderPesanan();
+    if (!byId('section-laporan').classList.contains('hidden')) renderLaporan();
 }
 
 function editPesanan(id) {
@@ -2111,46 +2142,63 @@ function printNota() {
     setTimeout(() => window.print(), 80);
 }
 
-// Unduh rekap ukuran A4 (landscape): TEPAT 4 form A6 per halaman A4 (2 x 2).
-async function exportLaporanImageA4() {
+// Cetak rekap A4 (landscape) langsung dari komputer lewat dialog cetak browser:
+// TEPAT 4 form A6 per halaman A4 (2 x 2). Di dialog cetak, pilih printer atau "Simpan sebagai PDF".
+async function printLaporanA4() {
     if (notaBusy) return;
-    const filtered = getLaporanFiltered();
-    if (filtered.length === 0) {
-        alert('Tidak ada data pesanan pada periode ini untuk diunduh!');
-        return;
-    }
-
-    const models = [];
-    await preloadParaf(filtered);
-    filtered.forEach(ord => buildNotaModels(ord).forEach(m => models.push(m)));
-    const pages = [];
-    for (let i = 0; i < models.length; i += 4) pages.push(models.slice(i, i + 4));
+    const list = getPesananUntukCetak();
+    if (!list) return;
 
     notaBusy = true;
     try {
-        if (document.fonts && document.fonts.ready) await document.fonts.ready;
-        for (let i = 0; i < pages.length; i++) {
-            const canvas = renderA4Canvas(pages[i]);
-            const suffix = pages.length > 1 ? `_hal${i + 1}-dari-${pages.length}` : '';
-            await saveCanvas(canvas, `Rekap_Pesanan_A4_${getLaporanFileSuffix()}${suffix}.png`);
-            if (i < pages.length - 1) await sleep(500);
+        await preloadParaf(list);
+        const sheets = [];
+        list.forEach(ord => buildNotaSheets(ord).forEach(sh => sheets.push(sh)));
+        let html = '';
+        for (let i = 0; i < sheets.length; i += 4) {
+            html += '<div class="a4-page">' + sheets.slice(i, i + 4).map(sh => `<div class="a4-cell">${sh}</div>`).join('') + '</div>';
         }
-        if (pages.length > 1) alert(`${pages.length} file gambar A4 telah diunduh (masing-masing berisi maksimal 4 form).`);
+
+        const old = document.getElementById('nota-print-root');
+        if (old) old.remove();
+        const oldStyle = document.getElementById('nota-page-style');
+        if (oldStyle) oldStyle.remove();
+
+        const root = document.createElement('div');
+        root.id = 'nota-print-root';
+        root.innerHTML = html;
+        document.body.appendChild(root);
+
+        const pageStyle = document.createElement('style');
+        pageStyle.id = 'nota-page-style';
+        pageStyle.textContent = '@page { size: A4 landscape; margin: 0; }';
+        document.head.appendChild(pageStyle);
+        document.documentElement.classList.add('printing-nota', 'printing-a4');
+
+        // pastikan gambar paraf sudah tampil sebelum dialog cetak dibuka
+        await Promise.all(Array.from(root.querySelectorAll('img')).map(im =>
+            im.complete ? null : new Promise(res => { im.onload = res; im.onerror = res; })));
+
+        const cleanup = () => {
+            root.remove();
+            pageStyle.remove();
+            document.documentElement.classList.remove('printing-nota', 'printing-a4');
+            window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        setTimeout(() => window.print(), 80);
     } catch (err) {
-        alert('Gagal mengunduh rekap A4: ' + err.message);
+        alert('Gagal menyiapkan cetak A4: ' + err.message);
     } finally {
         notaBusy = false;
     }
 }
 
-// Unduh rekap A4 dalam bentuk PDF: isi dan susunan SAMA dengan Unduh Gambar A4 (4 form A6 per halaman, 2 x 2).
+// Unduh rekap A4 dalam bentuk PDF: isi dan susunan SAMA dengan Print A4 (4 form A6 per halaman, 2 x 2).
 async function exportLaporanPdfA4() {
     if (notaBusy) return;
-    const filtered = getLaporanFiltered();
-    if (filtered.length === 0) {
-        alert('Tidak ada data pesanan pada periode ini untuk diunduh!');
-        return;
-    }
+    const filtered = getPesananUntukCetak();
+    if (!filtered) return;
 
     const models = [];
     await preloadParaf(filtered);
@@ -2221,7 +2269,7 @@ function formatTanggalIndo(str) {
 }
 
 function getLaporanUser() {
-    return can('users.manage') && byId('laporan-pengguna') ? (byId('laporan-pengguna').value || '') : '';
+    return can('users.filter') && byId('laporan-pengguna') ? (byId('laporan-pengguna').value || '') : '';
 }
 
 function getLaporanLabel() {
@@ -2259,16 +2307,63 @@ function setLaporanBulanIni() {
     renderLaporan();
 }
 
+// Pesanan yang dicentang manual untuk Print A4 / Unduh PDF A4 (hanya yang sedang tampil di tabel).
+const laporanTerpilih = new Set();
+let laporanJumlahTampil = 0;
+
+function laporanTogglePilih(id, checked) {
+    if (checked) laporanTerpilih.add(id); else laporanTerpilih.delete(id);
+    updateLaporanPilihUI();
+}
+
+function laporanPilihSemua(pilih) {
+    laporanTerpilih.clear();
+    if (pilih) getLaporanFiltered().forEach(o => laporanTerpilih.add(o.id));
+    renderLaporan();
+}
+
+function updateLaporanPilihUI() {
+    const n = laporanTerpilih.size;
+    const total = laporanJumlahTampil;
+    const info = byId('lap-sel-info');
+    if (info) {
+        info.innerText = total === 0 ? '' : (n > 0
+            ? `${n} dari ${total} pesanan dicentang`
+            : `Belum ada yang dicentang (cetak = semua ${total} pesanan)`);
+    }
+    ['lap-count-print', 'lap-count-pdf'].forEach(id => { const el = byId(id); if (el) el.innerText = n > 0 ? `(${n})` : ''; });
+}
+
+// Daftar pesanan yang akan dicetak / dijadikan PDF: yang dicentang; bila tidak ada, semua (setelah konfirmasi).
+function getPesananUntukCetak() {
+    const filtered = getLaporanFiltered();
+    if (filtered.length === 0) {
+        alert('Tidak ada data pesanan pada periode ini untuk dicetak!');
+        return null;
+    }
+    const dipilih = filtered.filter(o => laporanTerpilih.has(o.id));
+    if (dipilih.length > 0) return dipilih;
+    if (!confirm(`Belum ada pesanan yang dicentang.\nCetak SEMUA ${filtered.length} pesanan pada periode ini?`)) return null;
+    return filtered;
+}
+
 function renderLaporan() {
     const filtered = getLaporanFiltered();
     const tbody = byId('table-laporan-body');
     byId('lap-periode-label').innerText = '- ' + getLaporanLabel();
 
+    // centang hanya berlaku untuk pesanan yang sedang tampil
+    const idTampil = new Set(filtered.map(o => o.id));
+    Array.from(laporanTerpilih).forEach(id => { if (!idTampil.has(id)) laporanTerpilih.delete(id); });
+    laporanJumlahTampil = filtered.length;
+
+    const bisaAksi = can('laporan.aksi');
+    const tampilPemilik = can('users.filter');
     let totalItem = 0;
     let totalOmzet = 0;
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-gray-400">Tidak ada transaksi pada periode ini.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${bisaAksi ? 7 : 6}" class="text-center py-6 text-gray-400">Tidak ada transaksi pada periode ini.</td></tr>`;
     } else {
         tbody.innerHTML = filtered.map(ord => {
             const pel = pelangganList.find(c => c.id === ord.pelangganId) || { nama: 'Umum' };
@@ -2280,14 +2375,20 @@ function renderLaporan() {
 
             const itemsDesc = ord.items.map(i => `${i.qty}x ${i.nama}${i.varianWarna ? ' (' + i.varianWarna + ')' : ''}`).join(', ') + (ord.catatan ? ' — 📝 ' + ord.catatan : '');
             const waktu = new Date(ord.tanggal).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+            const pemilik = tampilPemilik ? userLabel(ord.ownerId) : '';
 
             return `
                 <tr class="hover:bg-gray-50 transition">
+                    <td data-label="Cetak" class="py-3 px-4 text-center"><input type="checkbox" class="w-5 h-5 rounded accent-emerald-600 cursor-pointer" aria-label="Pilih ${esc(ord.noNota)} untuk dicetak" ${laporanTerpilih.has(ord.id) ? 'checked' : ''} onchange="laporanTogglePilih('${ord.id}', this.checked)"></td>
                     <td data-label="No. Nota" class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}</td>
                     <td data-label="Waktu" class="py-3 px-4 text-gray-600 text-xs whitespace-nowrap">${esc(waktu)}</td>
-                    <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}</td>
+                    <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}${pemilik ? `<div class="text-[11px] font-normal text-gray-500 mt-0.5"><i class="fa-solid fa-user mr-1"></i>${esc(pemilik)}</div>` : ''}</td>
                     <td data-label="Item" class="py-3 px-4 text-gray-600 text-xs max-w-xs truncate" title="${esc(itemsDesc)}">${esc(itemsDesc)}</td>
                     <td data-label="Subtotal" class="py-3 px-4 font-bold text-emerald-600">${formatRupiah(itemSumHarga)}</td>
+                    ${bisaAksi ? `<td data-label="Aksi" class="py-3 px-4 text-center space-x-1">
+                        <button onclick="previewWhatsapp('${ord.id}')" class="bg-blue-50 text-blue-600 hover:bg-blue-100 p-1.5 rounded-lg transition" title="Lihat Nota"><i class="fa-solid fa-receipt text-base"></i></button>
+                        <button onclick="editPesanan('${ord.id}')" class="text-blue-600 hover:text-blue-800 p-1.5" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+                    </td>` : ''}
                 </tr>
             `;
         }).join('');
@@ -2296,6 +2397,7 @@ function renderLaporan() {
     byId('lap-total-pesanan').innerText = filtered.length;
     byId('lap-total-item').innerText = totalItem;
     byId('lap-total-omzet').innerText = formatRupiah(totalOmzet);
+    updateLaporanPilihUI();
 }
 
 function exportExcelLaporan() {

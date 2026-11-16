@@ -241,6 +241,14 @@
     html.printing-nota .nota-a6:last-child { break-after: auto; page-break-after: auto; }
 }
 
+/* Print rekap A4 landscape: 4 form A6 per halaman (2 x 2) */
+@media print {
+    html.printing-a4 .a4-page { break-after: page; page-break-after: always; width: 297mm; height: 209.6mm;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html.printing-a4 .a4-page:last-child { break-after: auto; page-break-after: auto; }
+    html.printing-a4 .nota-a6 { break-after: auto !important; page-break-after: auto !important; }
+}
+
 
 /* ===================================================================
    TAGIHAN HARIAN
