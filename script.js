@@ -170,6 +170,7 @@ const extraSupported = { catatan: true, no_order: true, kode_salesman: true, pem
 const EXTRA_COL_RE = /catatan|no_order|kode_salesman|pembayaran|paraf_toko|area/i;
 const MSG_KOLOM = 'Kolom baru (catatan / no. order / kode salesman / pembayaran / paraf toko / area) belum ada di database. Jalankan SQL migrasi di folder supabase (migrasi_nota_a6.sql, migrasi_paraf_toko.sql, migrasi_area.sql) pada Supabase SQL Editor, lalu coba lagi.';
 
+let dicetakDbOk = true;       // false bila kolom pesanan.dicetak_at belum dibuat (migrasi_dicetak.sql)
 let pelangganAreaOk = true;   // false bila kolom pelanggan.area belum dibuat (migrasi_area.sql)
 
 const TABLE_MAP = {
@@ -204,7 +205,7 @@ const TABLE_MAP = {
             });
             return row;
         },
-        from: (r) => ({ id: r.id, noNota: r.no_nota, tanggal: r.tanggal, pelangganId: r.pelanggan_id, items: r.items || [], catatan: r.catatan || '', noOrder: r.no_order || '', kodeSalesman: r.kode_salesman || '', pembayaran: r.pembayaran || '', parafToko: r.paraf_toko || '', ownerId: r.owner_id || '' })
+        from: (r) => ({ id: r.id, noNota: r.no_nota, tanggal: r.tanggal, pelangganId: r.pelanggan_id, items: r.items || [], catatan: r.catatan || '', noOrder: r.no_order || '', kodeSalesman: r.kode_salesman || '', pembayaran: r.pembayaran || '', parafToko: r.paraf_toko || '', ownerId: r.owner_id || '', dicetakAt: r.dicetak_at || '', dicetakVia: r.dicetak_via || '' })
     }
 };
 
@@ -227,6 +228,7 @@ async function dbFetchAll(table) {
     }
     if (table === 'pelanggan' && out.length) pelangganAreaOk = ('area' in out[0]);
     if (table === 'pesanan' && out.length) Object.keys(extraSupported).forEach(col => { extraSupported[col] = (col in out[0]); });
+    if (table === 'pesanan' && out.length) dicetakDbOk = ('dicetak_at' in out[0]);
     return out.map(cfg.from);
 }
 
@@ -297,10 +299,11 @@ async function callUsersApi(method, body) {
 // laporan.aksi = tombol Tambah Pesanan, Lihat Nota & Edit langsung dari menu Laporan & Rekap.
 const TAB_SEMUA = ['tab.pesanan', 'tab.produk', 'tab.pelanggan', 'tab.laporan', 'tab.tagihan'];
 const ROLE_PERMISSIONS = {
-    admin: ['produk.write', 'pelanggan.write', 'pelanggan.delete', 'pesanan.write', 'pesanan.delete', 'backup', 'users.manage', 'users.filter', ...TAB_SEMUA],
+    admin: ['produk.write', 'pelanggan.write', 'pelanggan.delete', 'pesanan.write', 'pesanan.delete', 'backup', 'users.manage', 'users.filter', 'tagihan.semua', ...TAB_SEMUA],
     salesman: ['pesanan.write', 'pelanggan.write', ...TAB_SEMUA],
-    // Kasir: hanya menu Laporan & Rekap; boleh tambah & edit pesanan semua salesman (tidak boleh hapus).
-    kasir: ['pesanan.write', 'laporan.aksi', 'users.filter', 'tab.laporan']
+    // Kasir: menu Laporan & Rekap + Tagihan; boleh tambah & edit pesanan semua salesman (tidak boleh hapus).
+    // tagihan.semua = boleh melihat & mencetak Laporan Tagihan milik semua salesman (kasir hanya melihat, tidak mengubah).
+    kasir: ['pesanan.write', 'laporan.aksi', 'users.filter', 'tagihan.semua', 'tab.laporan', 'tab.tagihan']
 };
 const ROLE_LABEL = { admin: 'Admin', salesman: 'Salesman', kasir: 'Kasir' };
 
@@ -466,11 +469,12 @@ function applyRole() {
 
 
 async function logout() {
-    currentUser = null;
+    currentUser = null; cetakMemori = null;
     userList = []; produkList = []; pelangganList = []; pesananList = [];
-    tagihanInit = false; tagihanIsDirty = false; tagihanLoadedDate = ''; tagihanLoadFailed = false; tagihanLoadSeq++;
+    tagihanInit = false; tagihanIsDirty = false; tagihanLoadedDate = ''; tagihanLoadFailed = false; tagihanLoadSeq++; tagihanLoadedOwner = ''; tagihanEditId = ''; antrianList = []; antrianSeq++;
+    if (byId('tagihan-pengguna')) byId('tagihan-pengguna').innerHTML = '';
     try { if (sb) await sb.auth.signOut(); } catch (e) { /* abaikan */ }
-    ['modal-pesanan', 'modal-produk', 'modal-pelanggan', 'modal-whatsapp', 'modal-pengguna', 'modal-password']
+    ['modal-pesanan', 'modal-produk', 'modal-pelanggan', 'modal-whatsapp', 'modal-pengguna', 'modal-password', 'modal-tagihan-preview']
         .forEach(id => byId(id).classList.add('hidden'));
     byId('app-shell').classList.add('hidden');
     byId('login-screen').classList.remove('hidden');
@@ -737,6 +741,17 @@ function fillUserFilters() {
             `<option value="${esc(u.id)}">${esc(u.nama || u.username)} (${esc(u.username)})</option>`).join('');
         el.value = userList.some(u => u.id === cur) ? cur : '';
     });
+    fillTagihanPengguna();
+}
+
+// Pilihan pemilik laporan tagihan (Admin & Kasir). Bawaan: akun sendiri.
+function fillTagihanPengguna() {
+    const el = byId('tagihan-pengguna');
+    if (!el) return;
+    const cur = el.value || (currentUser ? currentUser.id : '');
+    el.innerHTML = userList.map(u =>
+        `<option value="${esc(u.id)}">${esc(u.nama || u.username)} (${esc(u.username)})</option>`).join('');
+    el.value = userList.some(u => u.id === cur) ? cur : (currentUser ? currentUser.id : '');
 }
 
 function updateClock() {
@@ -1469,6 +1484,7 @@ async function savePesanan() {
             const updated = { ...existing, tanggal, pelangganId, items, catatan, noOrder, kodeSalesman, pembayaran };
             await dbUpsert('pesanan', updated);
             Object.assign(existing, updated);
+            await resetPenandaCetak(existing);   // isi nota berubah -> perlu dicetak ulang
         } else {
             // Nomor nota unik di server; bila bentrok dengan perangkat lain, ambil data terbaru lalu buat ulang.
             let newOrd = null;
@@ -2186,7 +2202,8 @@ async function printLaporanA4() {
             window.removeEventListener('afterprint', cleanup);
         };
         window.addEventListener('afterprint', cleanup);
-        setTimeout(() => window.print(), 80);
+        // Dialog cetak sudah dibuka untuk daftar ini -> beri tanda "Dicetak" (browser tidak memberi tahu apakah benar-benar dicetak).
+        setTimeout(() => { window.print(); tandaiSudahDicetak(list, 'print'); }, 80);
     } catch (err) {
         alert('Gagal menyiapkan cetak A4: ' + err.message);
     } finally {
@@ -2217,6 +2234,7 @@ async function exportLaporanPdfA4() {
             await sleep(0);
         }
         saveBlob(buildPdfFromJpegs(pages), `Rekap_Pesanan_A4_${getLaporanFileSuffix()}.pdf`);
+        tandaiSudahDicetak(filtered, 'pdf');
     } catch (err) {
         alert('Gagal membuat PDF rekap A4: ' + err.message);
     } finally {
@@ -2334,6 +2352,112 @@ function updateLaporanPilihUI() {
     ['lap-count-print', 'lap-count-pdf'].forEach(id => { const el = byId(id); if (el) el.innerText = n > 0 ? `(${n})` : ''; });
 }
 
+// ---- Penanda pesanan yang sudah dicetak / diunduh PDF ----
+// Disimpan di database (kolom pesanan.dicetak_at & dicetak_via, lihat supabase/migrasi_dicetak.sql)
+// sehingga sama di semua perangkat. Bila kolom belum ada / gagal disimpan, dipakai cadangan di
+// localStorage perangkat ini (hanya id pesanan + waktu, per pengguna).
+const CETAK_KEY_PREFIX = 'po_dicetak_';
+let cetakMemori = null;   // cache cadangan { [idPesanan]: { t: ISO waktu, via: 'print' | 'pdf' } }
+let cetakMemoriUser = '';
+
+function getCetakMap() {
+    const uid = currentUser ? currentUser.id : '';
+    if (cetakMemori && cetakMemoriUser === uid) return cetakMemori;
+    cetakMemoriUser = uid;
+    cetakMemori = {};
+    if (!uid) return cetakMemori;
+    try {
+        const raw = localStorage.getItem(CETAK_KEY_PREFIX + uid);
+        const obj = raw ? JSON.parse(raw) : null;
+        if (obj && typeof obj === 'object' && !Array.isArray(obj)) cetakMemori = obj;
+    } catch (e) { /* abaikan */ }
+    return cetakMemori;
+}
+
+function simpanCetakMap() {
+    if (!cetakMemoriUser) return;
+    try { localStorage.setItem(CETAK_KEY_PREFIX + cetakMemoriUser, JSON.stringify(cetakMemori || {})); } catch (e) { /* abaikan */ }
+}
+
+// Catatan cetak sebuah pesanan: dari database dulu, lalu cadangan lokal. null = belum pernah.
+function getCatatanCetak(ord) {
+    if (!ord) return null;
+    if (ord.dicetakAt) return { t: ord.dicetakAt, via: ord.dicetakVia };
+    return getCetakMap()[ord.id] || null;
+}
+
+function tandaiSudahDicetak(list, via) {
+    const now = new Date().toISOString();
+    const ids = list.map(o => o.id);
+    const map = getCetakMap();
+    const doneDb = new Set();
+
+    const finish = () => {
+        ids.forEach(id => {
+            if (doneDb.has(id)) { delete map[id]; return; }
+            map[id] = { t: now, via };   // cadangan lokal untuk yang gagal disimpan ke database
+        });
+        // buang cadangan lokal milik pesanan yang sudah tidak ada
+        const ada = new Set(pesananList.map(o => o.id));
+        Object.keys(map).forEach(id => { if (!ada.has(id)) delete map[id]; });
+        simpanCetakMap();
+        renderLaporan();
+    };
+
+    // tampil seketika (cadangan lokal), lalu disimpan ke database di latar belakang
+    ids.forEach(id => { map[id] = { t: now, via }; });
+    renderLaporan();
+
+    if (!sb || !dicetakDbOk) { finish(); return Promise.resolve(); }
+    return (async () => {
+        try {
+            for (let i = 0; i < ids.length; i += 200) {
+                const chunk = ids.slice(i, i + 200);
+                const { data, error } = await sb.from('pesanan')
+                    .update({ dicetak_at: now, dicetak_via: via }).in('id', chunk).select('id');
+                if (error) {
+                    if (/dicetak_/i.test(error.message || '')) dicetakDbOk = false;
+                    console.warn('Gagal menyimpan penanda cetak:', error);
+                    continue;
+                }
+                (data || []).forEach(r => doneDb.add(r.id));
+            }
+        } catch (err) {
+            console.warn('Gagal menyimpan penanda cetak:', err);
+        }
+        pesananList.forEach(o => { if (doneDb.has(o.id)) { o.dicetakAt = now; o.dicetakVia = via; } });
+        finish();
+    })();
+}
+
+// Hapus penanda (dipakai saat isi pesanan diubah, karena nota yang sudah dicetak tidak lagi sama).
+async function resetPenandaCetak(ord) {
+    if (!ord) return;
+    const map = getCetakMap();
+    if (map[ord.id]) { delete map[ord.id]; simpanCetakMap(); }
+    if (!ord.dicetakAt) return;
+    ord.dicetakAt = ''; ord.dicetakVia = '';
+    if (!sb || !dicetakDbOk) return;
+    try {
+        const { error } = await sb.from('pesanan').update({ dicetak_at: null, dicetak_via: null }).eq('id', ord.id);
+        if (error) console.warn('Gagal menghapus penanda cetak:', error);
+    } catch (err) { console.warn('Gagal menghapus penanda cetak:', err); }
+}
+
+function infoDicetak(id) {
+    const rec = getCatatanCetak(pesananList.find(o => o.id === id));
+    if (!rec) return null;
+    const waktu = new Date(rec.t).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+    return { label: rec.via === 'pdf' ? 'PDF' : 'Dicetak', waktu };
+}
+
+// Centang hanya pesanan (pada periode tampil) yang BELUM pernah dicetak / diunduh PDF.
+function laporanPilihBelumDicetak() {
+    laporanTerpilih.clear();
+    getLaporanFiltered().forEach(o => { if (!getCatatanCetak(o)) laporanTerpilih.add(o.id); });
+    renderLaporan();
+}
+
 // Daftar pesanan yang akan dicetak / dijadikan PDF: yang dicentang; bila tidak ada, semua (setelah konfirmasi).
 function getPesananUntukCetak() {
     const filtered = getLaporanFiltered();
@@ -2377,10 +2501,15 @@ function renderLaporan() {
             const waktu = new Date(ord.tanggal).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
             const pemilik = tampilPemilik ? userLabel(ord.ownerId) : '';
 
+            const dc = infoDicetak(ord.id);
+            const badgeDicetak = dc
+                ? `<div class="mt-1"><span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-100 border border-emerald-200 rounded-full px-2 py-0.5" title="${esc(dc.label === 'PDF' ? 'Sudah disimpan PDF' : 'Sudah dicetak')}: ${esc(dc.waktu)}"><i class="fa-solid fa-circle-check"></i> ${esc(dc.label === 'PDF' ? 'Sudah PDF' : 'Sudah dicetak')}</span><div class="text-[10px] font-normal text-gray-400 mt-0.5">${esc(dc.waktu)}</div></div>`
+                : `<div class="mt-1"><span class="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5"><i class="fa-regular fa-circle"></i> Belum dicetak</span></div>`;
+
             return `
-                <tr class="hover:bg-gray-50 transition">
+                <tr class="hover:bg-gray-50 transition ${dc ? 'bg-emerald-50/40' : ''}" data-dicetak="${dc ? '1' : '0'}">
                     <td data-label="Cetak" class="py-3 px-4 text-center"><input type="checkbox" class="w-5 h-5 rounded accent-emerald-600 cursor-pointer" aria-label="Pilih ${esc(ord.noNota)} untuk dicetak" ${laporanTerpilih.has(ord.id) ? 'checked' : ''} onchange="laporanTogglePilih('${ord.id}', this.checked)"></td>
-                    <td data-label="No. Nota" class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}</td>
+                    <td data-label="No. Nota" class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}${badgeDicetak}</td>
                     <td data-label="Waktu" class="py-3 px-4 text-gray-600 text-xs whitespace-nowrap">${esc(waktu)}</td>
                     <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}${pemilik ? `<div class="text-[11px] font-normal text-gray-500 mt-0.5"><i class="fa-solid fa-user mr-1"></i>${esc(pemilik)}</div>` : ''}</td>
                     <td data-label="Item" class="py-3 px-4 text-gray-600 text-xs max-w-xs truncate" title="${esc(itemsDesc)}">${esc(itemsDesc)}</td>
@@ -2394,6 +2523,9 @@ function renderLaporan() {
         }).join('');
     }
 
+    const sudahDicetak = filtered.filter(o => getCatatanCetak(o)).length;
+    const elStatus = byId('lap-status-cetak');
+    if (elStatus) elStatus.innerText = filtered.length ? `${sudahDicetak} sudah dicetak/PDF \u2022 ${filtered.length - sudahDicetak} belum` : '';
     byId('lap-total-pesanan').innerText = filtered.length;
     byId('lap-total-item').innerText = totalItem;
     byId('lap-total-omzet').innerText = formatRupiah(totalOmzet);
@@ -2527,7 +2659,7 @@ document.addEventListener('click', function (e) {
 const TAGIHAN_MIN_ROWS = 10;      // baris kosong awal di layar
 const TAGIHAN_A5_BATAS = 20;      // jumlah toko kurang dari ini -> PDF kertas A5, selain itu A4
 const TAGIHAN_ROWS_A4 = 35;       // jumlah baris minimal pada lembar A4
-const TAGIHAN_ROWS_A5 = 15;       // jumlah baris minimal pada lembar A5
+const TAGIHAN_ROWS_A5 = 18;       // jumlah baris minimal pada lembar A5 (landscape)
 const TAGIHAN_KODE = ['SMS', 'WM', 'MSJ'];
 const TAGIHAN_COLS = ['nama', 'noFaktur', 'tglFaktur', 'nilai', 'cash', 'giro', 'ketGiro', 'disc', 'ket'];
 const TAGIHAN_NUM = ['nilai', 'cash', 'giro', 'disc'];
@@ -2540,6 +2672,11 @@ let tagihanLoadedDate = '';
 let tagihanLoadFailed = false;
 let tagihanSaving = false;
 let tagihanLoadSeq = 0;
+let tagihanLoadedOwner = '';   // id pemilik laporan yang sedang tampil
+let tagihanEditId = '';        // id draft antrian yang sedang diedit ('' = draft baru)
+let antrianList = [];          // isi daftar tunggu cetak yang tampil
+let antrianSeq = 0;
+const TAGIHAN_MSG_ANTRIAN = 'Tabel tagihan_antrian belum ada di database. Jalankan supabase/migrasi_tagihan_antrian.sql pada Supabase SQL Editor, lalu muat ulang halaman.';
 let tagihanDdInput = null;
 let tagihanDdItems = [];
 let tagihanDdIndex = -1;
@@ -2861,11 +2998,49 @@ function tgInitEvents() {
 // ---- Muat & simpan ----
 function tgToday() { return toLocalDateStr(new Date()); }
 
+// Pemilik laporan yang sedang dibuka: akun sendiri, atau salesman pilihan Admin/Kasir.
+function tgOwnerId() {
+    const el = byId('tagihan-pengguna');
+    if (can('tagihan.semua') && el && el.value) return el.value;
+    return currentUser ? currentUser.id : '';
+}
+function tgOwnerUser() {
+    const id = tgOwnerId();
+    return (currentUser && id === currentUser.id) ? currentUser : (userList.find(u => u.id === id) || currentUser);
+}
+// Hanya pemilik (atau Admin) yang boleh mengubah; Kasir yang membuka milik orang lain hanya melihat & mencetak.
+function tgBolehUbah() {
+    return !!currentUser && (tgOwnerId() === currentUser.id || can('users.manage'));
+}
 function tgDefaults() {
+    const u = tgOwnerUser();
     return {
-        wilayah: (currentUser && currentUser.area) || '',
-        salesman: (currentUser && (currentUser.nama || currentUser.username)) || ''
+        wilayah: (u && u.area) || '',
+        salesman: (u && (u.nama || u.username)) || ''
     };
+}
+
+// Kunci / buka isian sesuai hak ubah (mode lihat untuk Kasir).
+function tgTerapkanAkses() {
+    const ro = !tgBolehUbah();
+    ['tagihan-kode', 'tagihan-kode-manual', 'tagihan-wilayah', 'tagihan-salesman'].forEach(id => { const el = byId(id); if (el) el.disabled = ro; });
+    const body = tgBody();
+    if (body) body.inert = ro;
+    ['tagihan-tambah', 'tagihan-kosongkan'].forEach(id => { const el = byId(id); if (el) el.classList.toggle('hidden', ro); });
+    const simpan = byId('tagihan-simpan');
+    if (simpan && ro) simpan.disabled = true;
+}
+
+// Ganti pemilik laporan (dropdown Pengguna)
+function tgPemilikDiubah() {
+    const sel = byId('tagihan-pengguna');
+    if (tagihanIsDirty && !confirm('Perubahan yang belum disimpan akan hilang. Lanjut ganti pengguna?')) {
+        sel.value = tagihanLoadedOwner || (currentUser ? currentUser.id : '');
+        return;
+    }
+    tagihanIsDirty = false;
+    muatTagihan();
+    muatAntrianTagihan();
 }
 
 function initTagihan() {
@@ -2874,8 +3049,10 @@ function initTagihan() {
         tgInitEvents();
         byId('tagihan-tanggal').value = tgToday();
         muatTagihan();
+        muatAntrianTagihan();
         return;
     }
+    muatAntrianTagihan();
     tgUpdateHint();   // data pelanggan mungkin baru disegarkan; jangan timpa isian yang belum disimpan
 }
 
@@ -2889,6 +3066,7 @@ async function muatTagihan() {
         return;
     }
     const seq = ++tagihanLoadSeq;
+    tagihanEditId = '';
     const simpan = byId('tagihan-simpan');
     simpan.disabled = true;
     tgStatus('Memuat laporan...');
@@ -2896,7 +3074,7 @@ async function muatTagihan() {
     let rec = null, failMsg = '';
     try {
         const { data, error } = await sb.from('tagihan_harian').select('*')
-            .eq('owner_id', currentUser.id).eq('tanggal', tgl).maybeSingle();
+            .eq('owner_id', tgOwnerId()).eq('tanggal', tgl).maybeSingle();
         if (error) throw error;
         rec = data;
     } catch (err) {
@@ -2906,6 +3084,7 @@ async function muatTagihan() {
 
     const def = tgDefaults();
     tagihanLoadedDate = tgl;
+    tagihanLoadedOwner = tgOwnerId();
     tagihanLoadFailed = !!failMsg;
     tagihanIsDirty = false;
     byId('tagihan-wilayah').value = rec ? (rec.wilayah || '') : def.wilayah;
@@ -2917,16 +3096,24 @@ async function muatTagihan() {
     if (failMsg) {
         // Simpan dikunci agar laporan yang sudah ada di server tidak tertimpa lembar kosong.
         simpan.disabled = true;
+        tgTerapkanAkses();
         tgStatus(failMsg + ' Ganti tanggal atau buka ulang menu ini untuk mencoba lagi.', 'red');
         tagihanInit = true;
         return;
     }
     simpan.disabled = false;
-    tgStatus(rec ? 'Laporan tersimpan dimuat. Ubah lalu klik Simpan.' : 'Laporan baru untuk tanggal ini.');
+    tgTerapkanAkses();
+    if (!tgBolehUbah()) {
+        const u = tgOwnerUser();
+        tgStatus(`Mode lihat: laporan ${u ? (u.nama || u.username) : ''} (hanya bisa dilihat dan dicetak).`);
+    } else {
+        tgStatus(rec ? 'Laporan tersimpan dimuat. Ubah lalu klik Simpan.' : 'Laporan baru untuk tanggal ini.');
+    }
 }
 
 async function simpanTagihan() {
     if (tagihanSaving || tagihanLoadFailed || !currentUser) return;
+    if (!tgBolehUbah()) { alert('Anda hanya dapat melihat dan mencetak laporan ini.'); return; }
     const all = tgCollect();
     const trs = tgBody().querySelectorAll('tr');
     for (let i = 0; i < all.length; i++) {
@@ -2938,30 +3125,36 @@ async function simpanTagihan() {
         }
     }
     const rows = all.filter(tgHasData);
+    if (!rows.length) { alert('Isi minimal satu baris tagihan sebelum disimpan.'); return; }
     const tgl = byId('tagihan-tanggal').value;
     const wilayah = byId('tagihan-wilayah').value.trim();
     const salesman = byId('tagihan-salesman').value.trim();
     const kode = tgKodeGet();
+    if (!salesman) { alert('Isi nama Salesman dulu: nama itu dipakai sebagai nama draft di daftar tunggu cetak.'); byId('tagihan-salesman').focus(); return; }
 
     tagihanSaving = true;
     const btn = byId('tagihan-simpan');
     btn.disabled = true;
-    tgStatus('Menyimpan...');
+    tgStatus('Menyimpan ke daftar tunggu cetak...');
     try {
-        if (!rows.length) {
-            const { error } = await sb.from('tagihan_harian').delete().eq('owner_id', currentUser.id).eq('tanggal', tgl);
+        const payload = { tanggal: tgl, kode, wilayah, salesman, rows, updated_at: new Date().toISOString() };
+        const sedangEdit = !!tagihanEditId;
+        if (sedangEdit) {
+            // isi berubah -> tanda "sudah dicetak" direset
+            const { error } = await sb.from('tagihan_antrian').update({ ...payload, printed_at: null, printed_by: null }).eq('id', tagihanEditId);
             if (error) throw error;
         } else {
-            const { error } = await sb.from('tagihan_harian').upsert(
-                { owner_id: currentUser.id, tanggal: tgl, kode, wilayah, salesman, rows, updated_at: new Date().toISOString() },
-                { onConflict: 'owner_id,tanggal' });
+            const { error } = await sb.from('tagihan_antrian').insert({ owner_id: tgOwnerId(), ...payload });
             if (error) throw error;
         }
+        // Berhasil: tabel isian dikosongkan agar bisa langsung mengisi tagihan berikutnya.
+        tagihanEditId = '';
         tagihanIsDirty = false;
-        const t = new Date();
-        tgStatus(rows.length ? `Tersimpan pukul ${pad2(t.getHours())}:${pad2(t.getMinutes())}.` : 'Laporan kosong, tidak ada yang disimpan.', 'green');
+        tgRenderRows([]);
+        tgStatus(`${salesman}: tagihan ${sedangEdit ? 'diperbarui di' : 'masuk'} daftar tunggu cetak. Tabel dikosongkan, silakan isi tagihan berikutnya.`, 'green');
+        await muatAntrianTagihan();
     } catch (err) {
-        tgStatus(tgError(err, 'menyimpan laporan tagihan'), 'red');
+        tgStatus(tgAntrianError(err, 'menyimpan laporan tagihan'), 'red');
     } finally {
         tagihanSaving = false;
         btn.disabled = false;
@@ -2974,10 +3167,10 @@ function kosongkanTagihan() {
     tagihanDirty();
 }
 
-// ---- Simpan PDF: A5 bila toko < TAGIHAN_A5_BATAS, selain itu A4 (portrait) ----
+// ---- Simpan PDF & Cetak: A5 portrait bila toko < TAGIHAN_A5_BATAS, selain itu A4 portrait ----
 function tgPaper(count) {
     return count < TAGIHAN_A5_BATAS
-        ? { nama: 'A5', land: true, w: 210, h: 148, m: 5, cols: [7, 38, 36, 21, 19, 19, 22, 16, 20], pt: 7, ptHead: 6.5, ptTitle: 10, ptMeta: 8, titleH: 6.5, metaH: 5, rowH: 4.6, headH: 4, footH: 12, signH: 6, salesW: 50, sigW: 70, minRows: TAGIHAN_ROWS_A5 }
+        ? { nama: 'A5', w: 210, h: 148, m: 5, cols: [7, 35, 37, 21, 19, 19, 22, 16, 24], pt: 6.8, ptHead: 6.3, ptTitle: 10, ptMeta: 7.8, titleH: 6, metaH: 5, rowH: 4.6, headH: 4, footH: 16, signH: 9, salesW: 72, sigW: 100, minRows: TAGIHAN_ROWS_A5 }
         : { nama: 'A4', w: 210, h: 297, m: 8, cols: [7, 34, 36, 21, 19, 19, 22, 16, 20], pt: 8, ptHead: 7.5, ptTitle: 11, ptMeta: 9, titleH: 9, metaH: 7, rowH: 6, headH: 5, footH: 22, signH: 13, salesW: 70, sigW: 98, minRows: TAGIHAN_ROWS_A4 };
 }
 
@@ -2985,7 +3178,7 @@ function tgUpdatePaper() {
     const el = byId('tagihan-paper');
     if (!el) return;
     const n = tgCollect().filter(tgHasData).length;
-    el.textContent = `Simpan PDF: kertas ${tgPaper(n).nama}${tgPaper(n).land ? ' landscape' : ''} (${n} toko; A5 bila kurang dari ${TAGIHAN_A5_BATAS} toko)`;
+    el.textContent = `Simpan PDF & Cetak: kertas ${tgPaper(n).nama} ${tgPaper(n).w > tgPaper(n).h ? 'landscape' : 'portrait'} (${n} toko; A5 bila kurang dari ${TAGIHAN_A5_BATAS} toko)`;
 }
 
 // Satu halaman laporan -> canvas
@@ -3158,10 +3351,10 @@ function tgBuildPdf(pages, wMm, hMm) {
 
 let tagihanPdfBusy = false;
 
-async function simpanPdfTagihan() {
-    if (tagihanPdfBusy) return;
-    const data = tgCollect().filter(tgHasData);
-    if (!data.length) { alert('Belum ada data tagihan untuk dijadikan PDF.'); return; }
+// Susun laporan -> daftar canvas halaman (dipakai Simpan PDF dan Cetak).
+async function tgBuatHalaman(rec, dpi) {
+    const data = (rec ? rec.rows : tgCollect()).filter(tgHasData);
+    if (!data.length) { if (!rec) alert('Belum ada data tagihan untuk dicetak / dijadikan PDF.'); return null; }
 
     const p = tgPaper(data.length);
     const rows = data.slice();
@@ -3170,13 +3363,13 @@ async function simpanPdfTagihan() {
     const sum = { nilai: 0, cash: 0, giro: 0, disc: 0 };
     data.forEach(r => TAGIHAN_NUM.forEach(k => { sum[k] += Number(r[k]) || 0; }));
 
-    const tgl = byId('tagihan-tanggal').value;
+    const tgl = rec ? rec.tanggal : byId('tagihan-tanggal').value;
     const d = new Date(tgl + 'T00:00:00');
     const info = {
-        kode: tgKodeGet(),
+        kode: rec ? rec.kode : tgKodeGet(),
         tglTxt: isNaN(d) ? '' : d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
-        wilayah: byId('tagihan-wilayah').value.trim(),
-        salesman: byId('tagihan-salesman').value.trim()
+        wilayah: rec ? rec.wilayah : byId('tagihan-wilayah').value.trim(),
+        salesman: rec ? rec.salesman : byId('tagihan-salesman').value.trim()
     };
 
     // bagi baris ke halaman (kepala tabel diulang; jumlah & tanda tangan di halaman terakhir)
@@ -3192,30 +3385,296 @@ async function simpanPdfTagihan() {
         pos += take;
     }
 
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const k = (dpi || 250) / 25.4;   // bawaan 250 dpi (pratinjau memakai dpi lebih kecil)
+    const canvases = chunks.map((ch, i) => tgDrawPage(p, info, rows, ch, sum, i + 1, chunks.length, k));
+    return { p, data, info, tgl, canvases };
+}
+
+async function simpanPdfTagihan() {
+    if (tagihanPdfBusy) return;
     const btn = byId('tagihan-pdf');
     const label = btn.innerHTML;
     tagihanPdfBusy = true;
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Membuat PDF...';
     try {
-        if (document.fonts && document.fonts.ready) await document.fonts.ready;
-        const k = 250 / 25.4;   // 250 dpi
+        const r = await tgBuatHalaman();
+        if (!r) return;
         const pages = [];
-        for (let i = 0; i < chunks.length; i++) {
-            const canvas = tgDrawPage(p, info, rows, chunks[i], sum, i + 1, chunks.length, k);
+        for (const canvas of r.canvases) {
             const blob = await canvasToBlob(canvas, 'image/jpeg', 0.92);
             pages.push({ jpeg: new Uint8Array(await blob.arrayBuffer()), w: canvas.width, h: canvas.height });
         }
         const safe = (s) => String(s || '').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
-        const name = ['Laporan_Tagihan', tgl, safe(info.wilayah), p.nama].filter(Boolean).join('_') + '.pdf';
-        saveBlob(tgBuildPdf(pages, p.w, p.h), name);
-        tgStatus(`PDF ${p.nama} disimpan (${data.length} toko).`, 'green');
+        const name = ['Laporan_Tagihan', r.tgl, safe(r.info.salesman), safe(r.info.wilayah), r.p.nama].filter(Boolean).join('_') + '.pdf';
+        saveBlob(tgBuildPdf(pages, r.p.w, r.p.h), name);
+        tgStatus(`PDF ${r.p.nama} disimpan (${r.data.length} toko).`, 'green');
     } catch (err) {
         alert('Gagal membuat PDF: ' + (err && err.message ? err.message : err));
     } finally {
         tagihanPdfBusy = false;
         btn.disabled = false;
         btn.innerHTML = label;
+    }
+}
+
+// Kirim halaman hasil tgBuatHalaman ke printer lewat dialog cetak browser.
+// Ukuran kertas sama dengan Simpan PDF: A5 landscape bila toko < TAGIHAN_A5_BATAS, selain itu A4 portrait.
+async function tgCetakHasil(r, antrianId) {
+    const old = byId('tagihan-print-root'); if (old) old.remove();
+    const oldStyle = byId('tagihan-page-style'); if (oldStyle) oldStyle.remove();
+
+    const root = document.createElement('div');
+    root.id = 'tagihan-print-root';
+    const imgs = r.canvases.map(c => {
+        const im = new Image();
+        im.className = 'tagihan-print-page';
+        im.alt = 'Laporan tagihan';
+        im.style.width = r.p.w + 'mm';
+        im.style.height = (r.p.h - 0.4) + 'mm';
+        im.src = c.toDataURL('image/jpeg', 0.92);
+        root.appendChild(im);
+        return im;
+    });
+    document.body.appendChild(root);
+
+    const pageStyle = document.createElement('style');
+    pageStyle.id = 'tagihan-page-style';
+    // nama kertas baku (A5 landscape / A4 portrait) supaya dialog cetak memilih ukuran kertas yang benar
+    pageStyle.textContent = `@page { size: ${r.p.nama} ${r.p.w > r.p.h ? 'landscape' : 'portrait'}; margin: 0; }`;
+    document.head.appendChild(pageStyle);
+    document.documentElement.classList.add('printing-tagihan');
+
+    await Promise.all(imgs.map(im => im.decode ? im.decode().catch(() => null) : null));
+
+    const cleanup = () => {
+        root.remove();
+        pageStyle.remove();
+        document.documentElement.classList.remove('printing-tagihan');
+        window.removeEventListener('afterprint', cleanup);
+        // Dialog cetak ditutup -> tandai draft "sudah dicetak" (bisa dibatalkan lewat tombol Batal tandai).
+        if (antrianId) tandaiDicetakAntrian(antrianId, true);
+    };
+    window.addEventListener('afterprint', cleanup);
+    tgStatus(`Cetak ${r.p.nama}: ${r.info.salesman || 'laporan'} (${r.data.length} toko). Pilih printer di dialog cetak.`, 'green');
+    setTimeout(() => window.print(), 80);
+}
+
+// Tombol "Cetak" di atas: mencetak isi tabel yang sedang tampil.
+async function cetakA4Tagihan() {
+    if (tagihanPdfBusy) return;
+    const btn = byId('tagihan-cetak');
+    const label = btn.innerHTML;
+    tagihanPdfBusy = true;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Menyiapkan...';
+    try {
+        const r = await tgBuatHalaman();
+        if (r) await tgCetakHasil(r);
+    } catch (err) {
+        alert('Gagal menyiapkan cetak: ' + (err && err.message ? err.message : err));
+    } finally {
+        tagihanPdfBusy = false;
+        btn.disabled = false;
+        btn.innerHTML = label;
+    }
+}
+
+// ================= DAFTAR TUNGGU CETAK =================
+function tgAntrianError(err, aksi) {
+    const code = err && err.code;
+    if (code === '42P01' || code === 'PGRST205') return TAGIHAN_MSG_ANTRIAN;
+    return tgError(err, aksi);
+}
+
+function tgRec(it) {
+    return {
+        rows: Array.isArray(it.rows) ? it.rows : [],
+        tanggal: it.tanggal,
+        kode: it.kode || '',
+        wilayah: it.wilayah || '',
+        salesman: it.salesman || ''
+    };
+}
+
+function tgBolehUbahDraft(it) {
+    return !!currentUser && (it.owner_id === currentUser.id || can('users.manage'));
+}
+
+async function muatAntrianTagihan() {
+    const box = byId('tagihan-antrian');
+    if (!box || !currentUser) return;
+    const seq = ++antrianSeq;
+    const cb = byId('tagihan-antrian-semua');
+    const semua = can('tagihan.semua') && cb && cb.checked;
+    let list = [], failMsg = '';
+    try {
+        let q = sb.from('tagihan_antrian').select('*').order('created_at', { ascending: false }).limit(60);
+        if (!semua) q = q.eq('owner_id', tgOwnerId());
+        const { data, error } = await q;
+        if (error) throw error;
+        list = data || [];
+    } catch (err) {
+        failMsg = tgAntrianError(err, 'memuat daftar tunggu cetak');
+    }
+    if (seq !== antrianSeq) return;
+    antrianList = list;
+    renderAntrianTagihan(failMsg, seq);
+}
+
+function renderAntrianTagihan(failMsg, seq) {
+    const box = byId('tagihan-antrian');
+    const belum = antrianList.filter(x => !x.printed_at).length;
+    byId('tagihan-antrian-count').textContent = antrianList.length ? `(${belum} belum dicetak · ${antrianList.length} draft)` : '';
+    const sembunyi = !!(byId('tagihan-antrian-sembunyi') && byId('tagihan-antrian-sembunyi').checked);
+    const tampil = sembunyi ? antrianList.filter(x => !x.printed_at) : antrianList;
+    if (failMsg) { box.innerHTML = `<p class="col-span-full text-sm text-red-600">${esc(failMsg)}</p>`; return; }
+    if (!antrianList.length) {
+        box.innerHTML = '<p class="col-span-full text-sm text-gray-500">Belum ada draft. Isi tabel di atas lalu klik Simpan Data: laporan masuk ke sini dan tabel dikosongkan.</p>';
+        return;
+    }
+    if (!tampil.length) { box.innerHTML = '<p class="col-span-full text-sm text-gray-500">Semua draft sudah dicetak. Hilangkan centang "Sembunyikan yang sudah dicetak" untuk melihatnya.</p>'; return; }
+    box.innerHTML = tampil.map(it => {
+        const rows = Array.isArray(it.rows) ? it.rows : [];
+        const total = rows.reduce((t, r) => t + (Number(r.nilai) || 0), 0);
+        const nama = it.salesman || userLabel(it.owner_id) || 'Tanpa nama';
+        const meta = [formatTanggalIndo(it.tanggal), it.kode, it.wilayah].filter(Boolean).join(' · ');
+        const ubah = tgBolehUbahDraft(it);
+        const id = esc(it.id);
+        const waktuCetak = it.printed_at ? new Date(it.printed_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+        return `<div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col ${it.printed_at ? 'opacity-80' : ''}">
+            <button type="button" onclick="previewAntrianTagihan('${id}')" aria-label="Lihat pratinjau ${esc(nama)}" class="relative block w-full bg-gray-100 border-b border-gray-100 h-48 overflow-hidden">
+                <img data-thumb="${id}" alt="" class="w-full h-full object-contain bg-white hidden">
+                <span data-thumb-wait="${id}" class="absolute inset-0 flex items-center justify-center text-gray-400 text-sm"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat pratinjau</span>
+                <span data-thumb-pages="${id}" class="hidden absolute top-2 right-2 bg-gray-900 text-white text-[10px] font-bold px-2 py-0.5 rounded-full"></span>
+                ${it.printed_at ? `<span class="absolute top-2 left-2 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full"><i class="fa-solid fa-check mr-1"></i>Sudah dicetak ${esc(waktuCetak)}</span>` : '<span class="absolute top-2 left-2 bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full">Belum dicetak</span>'}
+            </button>
+            <div class="p-3 flex-1 flex flex-col gap-1">
+                <p class="font-semibold text-gray-800 truncate" title="${esc(nama)}"><i class="fa-solid fa-user mr-1.5 text-primary"></i>${esc(nama)}</p>
+                <p class="text-xs text-gray-500">${esc(meta)}</p>
+                <p class="text-xs text-gray-600">${rows.filter(tgHasData).length} toko · <span class="font-semibold">${esc(formatRupiah(total))}</span></p>
+            </div>
+            <div class="p-3 pt-0 flex flex-wrap gap-2">
+                <button type="button" onclick="cetakAntrianTagihan('${id}')" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-xs font-semibold transition flex items-center justify-center"><i class="fa-solid fa-print mr-1.5"></i> ${it.printed_at ? 'Cetak ulang' : 'Cetak'}</button>
+                ${it.printed_at ? `<button type="button" onclick="tandaiDicetakAntrian('${id}', false)" class="bg-gray-100 text-gray-600 hover:bg-gray-200 px-3 py-2 rounded-lg text-xs font-semibold transition" title="Kembalikan ke Belum dicetak">Batal tandai</button>` : ''}
+                ${ubah ? `<button type="button" onclick="editAntrianTagihan('${id}')" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-2 rounded-lg text-xs font-semibold transition" title="Ambil kembali ke tabel untuk diedit"><i class="fa-solid fa-pen-to-square mr-1.5"></i> Edit</button>
+                <button type="button" onclick="hapusAntrianTagihan('${id}')" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-2 rounded-lg text-xs font-semibold transition" aria-label="Hapus draft"><i class="fa-solid fa-trash"></i></button>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+
+    // gambar pratinjau dibuat satu per satu agar halaman tidak macet
+    (async () => {
+        for (const it of tampil) {
+            if (seq !== antrianSeq) return;
+            try {
+                const r = await tgBuatHalaman(tgRec(it), 70);
+                const img = box.querySelector(`[data-thumb="${CSS.escape(it.id)}"]`);
+                if (!r || !img) continue;
+                img.src = r.canvases[0].toDataURL('image/jpeg', 0.8);
+                img.classList.remove('hidden');
+                const wait = box.querySelector(`[data-thumb-wait="${CSS.escape(it.id)}"]`); if (wait) wait.remove();
+                if (r.canvases.length > 1) {
+                    const pg = box.querySelector(`[data-thumb-pages="${CSS.escape(it.id)}"]`);
+                    if (pg) { pg.textContent = r.canvases.length + ' hal'; pg.classList.remove('hidden'); }
+                }
+            } catch (e) { /* pratinjau gagal: kartu tetap bisa dicetak */ }
+            await new Promise(res => setTimeout(res, 0));
+        }
+    })();
+}
+
+function antrianById(id) { return antrianList.find(x => x.id === id); }
+
+// Tandai / batalkan tanda "sudah dicetak" lewat fungsi database (Kasir pun boleh, tanpa hak ubah isi).
+async function tandaiDicetakAntrian(id, status) {
+    try {
+        const { error } = await sb.rpc('set_antrian_dicetak', { p_id: id, p_dicetak: !!status });
+        if (error) throw error;
+    } catch (err) {
+        console.warn('Gagal menandai dicetak:', err);
+        if (!status) alert('Gagal mengubah tanda cetak. Pastikan migrasi_tagihan_antrian.sql versi terbaru sudah dijalankan.');
+        return;
+    }
+    await muatAntrianTagihan();
+}
+
+async function previewAntrianTagihan(id) {
+    const it = antrianById(id);
+    if (!it) return;
+    const body = byId('tagihan-preview-body');
+    byId('tagihan-preview-judul').textContent = `${it.salesman || userLabel(it.owner_id) || 'Draft'} · ${formatTanggalIndo(it.tanggal)}`;
+    byId('tagihan-preview-cetak').onclick = () => cetakAntrianTagihan(id);
+    body.innerHTML = '<p class="text-center text-sm text-gray-500 py-8"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Membuat pratinjau...</p>';
+    byId('modal-tagihan-preview').classList.remove('hidden');
+    try {
+        const r = await tgBuatHalaman(tgRec(it), 130);
+        if (!r) { body.innerHTML = '<p class="text-center text-sm text-gray-500 py-8">Draft ini kosong.</p>'; return; }
+        body.innerHTML = '';
+        r.canvases.forEach((c, i) => {
+            const im = new Image();
+            im.alt = `Halaman ${i + 1}`;
+            im.className = 'w-full h-auto bg-white border border-gray-300 shadow-sm';
+            im.src = c.toDataURL('image/jpeg', 0.85);
+            body.appendChild(im);
+        });
+    } catch (err) {
+        body.innerHTML = `<p class="text-center text-sm text-red-600 py-8">Gagal membuat pratinjau: ${esc(err && err.message ? err.message : String(err))}</p>`;
+    }
+}
+
+function tutupPreviewTagihan() { byId('modal-tagihan-preview').classList.add('hidden'); }
+
+async function cetakAntrianTagihan(id) {
+    const it = antrianById(id);
+    if (!it || tagihanPdfBusy) return;
+    tagihanPdfBusy = true;
+    try {
+        const r = await tgBuatHalaman(tgRec(it));
+        if (r) await tgCetakHasil(r, id);
+    } catch (err) {
+        alert('Gagal menyiapkan cetak: ' + (err && err.message ? err.message : err));
+    } finally {
+        tagihanPdfBusy = false;
+    }
+}
+
+// Ambil draft kembali ke tabel isian (draft yang sama diperbarui saat Simpan Data).
+function editAntrianTagihan(id) {
+    const it = antrianById(id);
+    if (!it || !tgBolehUbahDraft(it)) return;
+    if (tagihanIsDirty && !confirm('Isian tabel yang belum disimpan akan diganti dengan draft ini. Lanjut?')) return;
+    const sel = byId('tagihan-pengguna');
+    if (sel && can('tagihan.semua') && Array.from(sel.options).some(o => o.value === it.owner_id)) sel.value = it.owner_id;
+    byId('tagihan-tanggal').value = it.tanggal;
+    tagihanLoadedDate = it.tanggal;
+    tagihanLoadedOwner = tgOwnerId();
+    tagihanLoadFailed = false;
+    tgKodeSet(it.kode);
+    byId('tagihan-wilayah').value = it.wilayah || '';
+    byId('tagihan-salesman').value = it.salesman || '';
+    tgRenderRows(Array.isArray(it.rows) ? it.rows : []);
+    tgUpdateHint();
+    tagihanEditId = it.id;
+    tagihanIsDirty = false;
+    byId('tagihan-simpan').disabled = false;
+    tgTerapkanAkses();
+    tgStatus(`Mengedit draft ${it.salesman || ''}. Klik Simpan Data untuk memperbarui daftar tunggu cetak.`, 'amber');
+    byId('section-tagihan').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function hapusAntrianTagihan(id) {
+    const it = antrianById(id);
+    if (!it || !tgBolehUbahDraft(it)) return;
+    if (!confirm(`Hapus draft "${it.salesman || 'tanpa nama'}" (${formatTanggalIndo(it.tanggal)}) dari daftar tunggu cetak?`)) return;
+    try {
+        const { error } = await sb.from('tagihan_antrian').delete().eq('id', id);
+        if (error) throw error;
+        if (tagihanEditId === id) tagihanEditId = '';
+        await muatAntrianTagihan();
+    } catch (err) {
+        alert(tgAntrianError(err, 'menghapus draft'));
     }
 }
 

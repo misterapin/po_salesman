@@ -290,3 +290,16 @@ html.dark .tagihan-table .tg-in.tg-bad { background: rgba(239,68,68,.13); }
     .tagihan-table tfoot td.tt-title::before { content: none; }
 }
 html.dark .tagihan-table tbody td::before, html.dark .tagihan-table tfoot td::before { color: #94a3b8; }
+
+
+/* ===================================================================
+   CETAK A4 LAPORAN TAGIHAN (gambar halaman dibuat lewat canvas, lihat cetakA4Tagihan)
+   =================================================================== */
+#tagihan-print-root { display: none; }
+@media print {
+    html.printing-tagihan body > *:not(#tagihan-print-root) { display: none !important; }
+    html.printing-tagihan #tagihan-print-root { display: block !important; }
+    html.printing-tagihan, html.printing-tagihan body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+    html.printing-tagihan .tagihan-print-page { display: block; break-after: page; page-break-after: always; }
+    html.printing-tagihan .tagihan-print-page:last-child { break-after: auto; page-break-after: auto; }
+}
