@@ -61,7 +61,7 @@ vercel --prod
 1. Buka `https://DOMAIN-ANDA/api/health` -> harus tampil `"ok": true` dan ketiganya `true`.
    Bila ada yang `false`, nama variabel tertera di `missing`.
 2. Login `admin` + password yang Anda buat di langkah A.2.
-3. Menu **Pengguna** > Tambah Pengguna > buat akun Kasir, lalu coba login sebagai kasir.
+3. Menu **Pengguna** > Tambah Pengguna > buat akun Salesman, lalu coba login sebagai salesman.
 
 ## E. Pemecahan masalah
 | Gejala | Penyebab / solusi |

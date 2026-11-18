@@ -1,0 +1,102 @@
+/* ===================================================================
+   TEMA MODERN  (dimuat setelah style.css; hanya menimpa tampilan)
+   - Tidak mengubah logika: semua id, class JS, dan data-attribute tetap.
+   - Desktop >= 1024px : menu pindah ke sidebar kiri.
+   - HP / tablet kecil : tetap memakai menu bawah & tabel kartu dari style.css.
+   - Nota A6 & rekap A4 sengaja tidak disentuh (tetap putih saat unduh/cetak).
+   =================================================================== */
+html {
+    --bg: #F4F6F9; --surface: #FFFFFF; --surface2: #F8FAFC; --line: #E4E9F0; --chip: #EEF2F7;
+    --text: #0F172A; --muted: #64748B; --accent: #10B981; --accent-ink: #047857;
+    --nav-hover: #F1F5F9; --nav-on-bg: rgba(16,185,129,.12); --ring: rgba(16,185,129,.35);
+    --shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px -12px rgba(15,23,42,.10);
+}
+html.dark {
+    --bg: #0A0E14; --surface: #0F151E; --surface2: #0C121A; --line: #1B2430; --chip: #141C28;
+    --text: #E8ECF2; --muted: #9AA6B6; --accent-ink: #34D399;
+    --nav-hover: #151C27; --nav-on-bg: rgba(16,185,129,.14); --ring: rgba(52,211,153,.40);
+    --shadow: none;
+}
+@media screen {
+    html body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; background-color: var(--bg) !important; color: var(--text); font-feature-settings: 'cv11', 'ss01'; }
+    html body #app-shell .font-mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: .8125rem; font-weight: 500; }
+    html body #app-shell :focus-visible, html body #login-screen :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* ---------- Header ---------- */
+    html body #app-shell > header { background: color-mix(in srgb, var(--surface) 86%, transparent) !important; backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); box-shadow: none !important; }
+    html body #app-shell > header .bg-gray-100 { background: var(--chip) !important; border-radius: 10px; }
+    html body #app-shell > header .bg-gray-100:hover { background: var(--nav-hover) !important; }
+    html body #app-shell > header .bg-red-50 { border-radius: 10px; }
+    html body #app-shell > header .bg-primary { border-radius: 12px; box-shadow: 0 8px 20px -8px rgba(16,185,129,.6); }
+
+    /* ---------- Menu (versi atas / HP) ---------- */
+    html body #main-nav { background: var(--surface) !important; border-color: var(--line) !important; box-shadow: none !important; }
+    html body #main-nav .tab-btn { font-weight: 500; }
+    html body #main-nav .tab-btn.text-primary { color: var(--accent-ink) !important; font-weight: 600; }
+
+    /* ---------- Kartu, tabel, form ---------- */
+    html body #app-shell main :is(.bg-white):is(.rounded-xl, .rounded-2xl, .rounded-lg)::not(:is(.nota-a6, .nota-a6 *, .a4-page, .a4-page *, #printable-invoice, #printable-invoice *, #printable-laporan-a4, #printable-laporan-a4 *)) { background: var(--surface) !important; border: 1px solid var(--line) !important; border-radius: 16px; box-shadow: var(--shadow) !important; }
+    html body #app-shell main thead tr { background: var(--surface2) !important; color: var(--muted) !important; border-color: var(--line) !important; }
+    html body #app-shell main thead th { font-size: .72rem; font-weight: 600; letter-spacing: .06em; }
+    html body #app-shell main tbody tr { transition: background-color .12s; }
+    html body #app-shell main tbody tr:hover { background: var(--surface2) !important; }
+    html body #app-shell main :is(.divide-gray-200, .divide-gray-100) > :not([hidden]) ~ :not([hidden]) { border-color: var(--line) !important; }
+    html body #app-shell main tfoot tr { background: var(--surface2) !important; }
+
+    html body :is(#app-shell, #login-screen) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]), select, textarea)::not(:is(.nota-a6, .nota-a6 *, .a4-page, .a4-page *, #printable-invoice, #printable-invoice *, #printable-laporan-a4, #printable-laporan-a4 *)) {
+        background-color: var(--surface2); border: 1px solid var(--line); border-radius: 12px; color: var(--text); transition: border-color .12s, box-shadow .12s;
+    }
+    html body :is(#app-shell, #login-screen) :is(input, select, textarea)::not(:is(.nota-a6, .nota-a6 *, .a4-page, .a4-page *, #printable-invoice, #printable-invoice *, #printable-laporan-a4, #printable-laporan-a4 *)):focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+    html body #app-shell main input[type=checkbox] { accent-color: var(--accent); }
+
+    /* ---------- Tombol ---------- */
+    html body #app-shell button.bg-primary, html body #app-shell label.bg-primary, html body #login-screen button.bg-primary { border-radius: 12px; font-weight: 600; box-shadow: 0 8px 20px -8px rgba(16,185,129,.55) !important; }
+    html body #app-shell main .bg-gray-100:is(button, label) { background: var(--chip) !important; border-radius: 10px; }
+    html body #app-shell .responsive-table td[data-label="Aksi"] button { width: 2.25rem; height: 2.25rem; padding: 0 !important; border-radius: 10px; display: inline-grid; place-items: center; background: var(--chip) !important; transition: background-color .12s; }
+    html body #app-shell .responsive-table td[data-label="Aksi"] button:hover { background: var(--nav-on-bg) !important; }
+    html body #app-shell .responsive-table td[data-label="Aksi"] button.text-red-600:hover { background: rgba(239,68,68,.14) !important; }
+    html body #app-shell .responsive-table td[data-label="Aksi"] { white-space: nowrap; }
+
+    /* ---------- Judul halaman ---------- */
+    html body #app-shell section.tab-content > div:first-child h2 { font-size: 1.65rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; color: var(--text); }
+    html body #app-shell section.tab-content > div:first-child p { margin-top: .3rem; color: var(--muted); }
+    html body #app-shell #pesanan-scope-hint { color: var(--muted); }
+
+    /* ---------- Dialog ---------- */
+    html body [id^="modal-"].fixed { backdrop-filter: blur(6px); }
+    html body [id^="modal-"].fixed > div { border-radius: 20px; border: 1px solid var(--line); box-shadow: 0 24px 60px -20px rgba(0,0,0,.45); }
+
+    /* ---------- Footer & login ---------- */
+    html body #app-shell > footer { background: transparent !important; border-color: var(--line) !important; color: var(--muted); }
+    html body #login-screen { background-image: radial-gradient(900px 500px at 15% -10%, rgba(16,185,129,.16), transparent 60%), linear-gradient(160deg, var(--bg), var(--surface2)) !important; }
+    html body #login-screen > div.bg-white { background: var(--surface) !important; border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow) !important; }
+
+    /* ---------- Scrollbar tipis ---------- */
+    * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+}
+
+/* ===================== SIDEBAR (desktop) ===================== */
+@media screen and (min-width: 1024px) {
+    html body #app-shell:not(.hidden) { display: grid; grid-template-columns: 264px minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; align-items: start; min-height: 100vh; }
+    html body #app-shell > header { grid-column: 2; grid-row: 1; position: sticky; top: 0; }
+    html body #app-shell > header > div { max-width: none; justify-content: flex-end; padding: .7rem 2.5rem; }
+    html body #app-shell > header > div > div:first-child { display: none; }
+    html body #app-shell > #default-pw-banner { grid-column: 2; grid-row: 2; max-width: none; padding: 1rem 2.5rem 0; }
+    html body #app-shell > main { grid-column: 2; grid-row: 3; align-self: stretch; max-width: 1320px; margin: 0; padding: 1.75rem 2.5rem 3.5rem; }
+    html body #app-shell > footer { grid-column: 2; grid-row: 4; align-self: end; width: 100%; }
+
+    html body #main-nav { grid-column: 1; grid-row: 1 / -1; position: sticky; top: 0; height: 100vh; align-self: start; border-right: 1px solid var(--line); border-bottom: 0 !important; padding: 1.5rem 1rem; overflow-y: auto; }
+    html body #main-nav::before {
+        content: 'PO SALESMAN'; display: flex; align-items: center; min-height: 42px; margin: .15rem .4rem 1.75rem; padding-left: 54px;
+        font-size: 1rem; font-weight: 700; letter-spacing: .01em; color: var(--text);
+        background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 42 42'><rect width='42' height='42' rx='12' fill='%2310B981'/><g fill='none' stroke='%2304130D' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M10 18l2-7h18l2 7'/><path d='M11 18v13h20V18'/><path d='M18 31v-8h6v8'/></g></svg>") no-repeat left center / 42px 42px;
+    }
+    html body #main-nav > div { max-width: none; margin: 0; padding: 0; flex-direction: column; gap: .25rem; overflow: visible; }
+    html body #main-nav .tab-btn { width: 100%; margin: 0 !important; padding: .7rem .9rem; border-width: 0 !important; border-radius: 12px; justify-content: flex-start; font-size: .9rem; color: var(--muted); }
+    html body #main-nav .tab-btn i { width: 1.25rem; margin-right: .75rem; text-align: center; }
+    html body #main-nav .tab-btn:hover { background: var(--nav-hover); color: var(--text); }
+    html body #main-nav .tab-btn.text-primary { background: var(--nav-on-bg); }
+}
+@media screen and (min-width: 640px) {
+    html body #app-shell .responsive-table td { padding-top: .95rem; padding-bottom: .95rem; }
+}
