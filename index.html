@@ -437,6 +437,11 @@
                     <p id="tagihan-status" class="text-xs text-gray-500 mt-0.5">Pilih tanggal, lalu isi tagihan yang diterima.</p>
                     <p id="tagihan-paper" class="text-[11px] text-gray-400 mt-0.5"></p>
                 </div>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <button onclick="cetakA4Tagihan()" id="tagihan-cetak" class="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md transition flex items-center justify-center">
+                        <i class="fa-solid fa-print mr-2"></i> Cetak
+                    </button>
+                </div>
             </div>
 
             <div data-perm="tagihan.semua" class="hidden bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap items-center gap-3">
@@ -482,11 +487,6 @@
                                 <th class="py-2.5 px-2 min-w-[120px]">No. Faktur</th>
                                 <th class="py-2.5 px-2 min-w-[115px]">Tgl. Faktur</th>
                                 <th class="py-2.5 px-2 min-w-[120px] text-right">Nilai Faktur</th>
-                                <th class="py-2.5 px-2 min-w-[110px] text-right">Cash</th>
-                                <th class="py-2.5 px-2 min-w-[110px] text-right">Nilai Giro</th>
-                                <th class="py-2.5 px-2 min-w-[140px]">Ket Giro &amp; Tgl</th>
-                                <th class="py-2.5 px-2 min-w-[110px] text-right">Disc / Retur</th>
-                                <th class="py-2.5 px-2 min-w-[110px]">Keterangan</th>
                                 <th class="py-2.5 px-2 w-10"></th>
                             </tr>
                         </thead>
@@ -495,11 +495,7 @@
                             <tr class="bg-gray-50 border-t-2 border-gray-300 font-bold text-gray-800">
                                 <td colspan="4" class="tt-title py-2.5 px-2 text-right text-xs uppercase tracking-wider">Jumlah</td>
                                 <td id="tt-nilai" data-label="Nilai Faktur" class="py-2.5 px-2 text-right tabular-nums"></td>
-                                <td id="tt-cash" data-label="Cash" class="py-2.5 px-2 text-right tabular-nums"></td>
-                                <td id="tt-giro" data-label="Nilai Giro" class="py-2.5 px-2 text-right tabular-nums"></td>
                                 <td></td>
-                                <td id="tt-disc" data-label="Disc / Retur" class="py-2.5 px-2 text-right tabular-nums"></td>
-                                <td colspan="2"></td>
                             </tr>
                         </tfoot>
                     </table>

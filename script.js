@@ -2642,6 +2642,8 @@ const TAGIHAN_ROWS_A4 = 35;       // jumlah baris minimal pada lembar A4 (portra
 const TAGIHAN_KODE = ['SMS', 'WM', 'MSJ'];
 const TAGIHAN_COLS = ['nama', 'noFaktur', 'tglFaktur', 'nilai', 'cash', 'giro', 'ketGiro', 'disc', 'ket'];
 const TAGIHAN_NUM = ['nilai', 'cash', 'giro', 'disc'];
+// Kolom yang tampil & diisi di layar. Cash, Giro, Ket Giro, Disc/Retur, Keterangan diisi manual di kertas cetak.
+const TAGIHAN_VIS = ['nama', 'noFaktur', 'tglFaktur', 'nilai'];
 const TAGIHAN_LABEL = { nama: 'Nama Pelanggan', noFaktur: 'No. Faktur', tglFaktur: 'Tgl. Faktur (dd/mm/yyyy)', nilai: 'Nilai Faktur', cash: 'Cash', giro: 'Nilai Giro', ketGiro: 'Ket Giro & Tgl', disc: 'Disc / Retur', ket: 'Keterangan' };
 const TAGIHAN_MSG_TABEL = 'Tabel/kolom tagihan_harian belum lengkap di database. Jalankan supabase/migrasi_tagihan.sql pada Supabase SQL Editor, lalu muat ulang halaman.';
 
@@ -2688,18 +2690,15 @@ function tgRowHtml(no, data) {
     data = data || {};
     const val = (k) => TAGIHAN_NUM.includes(k) ? esc(tgFmtNum(data[k])) : esc(data[k] || '');
     const inp = (k, extra) => `<input type="text" class="tg-in${TAGIHAN_NUM.includes(k) ? ' tg-num' : ''}" data-k="${k}" value="${val(k)}" autocomplete="off" aria-label="${esc(TAGIHAN_LABEL[k])} baris ${no}" ${extra || ''}>`;
+    // Kolom yang tidak ditampilkan tetap membawa nilai lama (data tersimpan) agar tidak hilang saat disimpan ulang.
+    const hid = (k) => `<input type="hidden" data-k="${k}" value="${val(k)}">`;
     return `<tr data-pid="${esc(data.pelangganId || '')}">
         <td data-label="No" class="tg-no py-1.5 px-2 text-gray-500 text-xs align-middle">${no}</td>
         <td data-label="Nama Pelanggan" class="tg-span2 py-1.5 px-1">${inp('nama', 'enterkeyhint="next" placeholder="Ketik nama toko..."')}</td>
         <td data-label="No. Faktur" class="py-1.5 px-1">${inp('noFaktur', 'enterkeyhint="next"')}</td>
         <td data-label="Tgl. Faktur" class="py-1.5 px-1">${inp('tglFaktur', 'inputmode="numeric" maxlength="10" placeholder="dd/mm/yyyy" enterkeyhint="next"')}</td>
         <td data-label="Nilai Faktur" class="py-1.5 px-1">${inp('nilai', 'inputmode="numeric" enterkeyhint="next"')}</td>
-        <td data-label="Cash" class="py-1.5 px-1">${inp('cash', 'inputmode="numeric" enterkeyhint="next"')}</td>
-        <td data-label="Nilai Giro" class="py-1.5 px-1">${inp('giro', 'inputmode="numeric" enterkeyhint="next"')}</td>
-        <td data-label="Ket Giro & Tgl" class="py-1.5 px-1">${inp('ketGiro', 'enterkeyhint="next"')}</td>
-        <td data-label="Disc / Retur" class="py-1.5 px-1">${inp('disc', 'inputmode="numeric" enterkeyhint="next"')}</td>
-        <td data-label="Keterangan" class="py-1.5 px-1">${inp('ket', 'enterkeyhint="next"')}</td>
-        <td class="tg-del py-1.5 px-1 text-center align-middle"><button type="button" data-del title="Hapus baris" aria-label="Hapus baris ${no}" class="text-gray-400 hover:text-red-600 p-1.5"><i class="fa-solid fa-xmark"></i></button></td>
+        <td class="tg-del py-1.5 px-1 text-center align-middle">${hid('cash')}${hid('giro')}${hid('ketGiro')}${hid('disc')}${hid('ket')}<button type="button" data-del title="Hapus baris" aria-label="Hapus baris ${no}" class="text-gray-400 hover:text-red-600 p-1.5"><i class="fa-solid fa-xmark"></i></button></td>
     </tr>`;
 }
 
@@ -2747,9 +2746,6 @@ function tgTotals() {
         });
     });
     byId('tt-nilai').textContent = tgGroup(String(sum.nilai));
-    byId('tt-cash').textContent = tgGroup(String(sum.cash));
-    byId('tt-giro').textContent = tgGroup(String(sum.giro));
-    byId('tt-disc').textContent = tgGroup(String(sum.disc));
     return sum;
 }
 
@@ -2926,8 +2922,8 @@ function tgInitEvents() {
         if (e.key === 'Enter') {
             e.preventDefault();
             tgDdHide();
-            const idx = TAGIHAN_COLS.indexOf(k);
-            if (idx < TAGIHAN_COLS.length - 1) { tgFocusCell(tr, TAGIHAN_COLS[idx + 1]); return; }
+            const idx = TAGIHAN_VIS.indexOf(k);
+            if (idx >= 0 && idx < TAGIHAN_VIS.length - 1) { tgFocusCell(tr, TAGIHAN_VIS[idx + 1]); return; }
             if (!tr.nextElementSibling) tambahBarisTagihan(); else tgFocusCell(tr.nextElementSibling, 'nama');
             return;
         }
