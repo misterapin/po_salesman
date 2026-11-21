@@ -2638,9 +2638,7 @@ document.addEventListener('click', function (e) {
 // Laporan Penerimaan Tagihan Harian: satu laporan per pengguna per tanggal (tabel Supabase: tagihan_harian).
 // Autocomplete pelanggan memakai pelangganList yang difilter berdasarkan Wilayah/Area (default: area pengguna).
 const TAGIHAN_MIN_ROWS = 10;      // baris kosong awal di layar
-const TAGIHAN_A5_BATAS = 20;      // jumlah toko kurang dari ini -> PDF kertas A5, selain itu A4
-const TAGIHAN_ROWS_A4 = 35;       // jumlah baris minimal pada lembar A4
-const TAGIHAN_ROWS_A5 = 18;       // jumlah baris minimal pada lembar A5 (landscape)
+const TAGIHAN_ROWS_A4 = 35;       // jumlah baris minimal pada lembar A4 (portrait)
 const TAGIHAN_KODE = ['SMS', 'WM', 'MSJ'];
 const TAGIHAN_COLS = ['nama', 'noFaktur', 'tglFaktur', 'nilai', 'cash', 'giro', 'ketGiro', 'disc', 'ket'];
 const TAGIHAN_NUM = ['nilai', 'cash', 'giro', 'disc'];
@@ -3148,18 +3146,16 @@ function kosongkanTagihan() {
     tagihanDirty();
 }
 
-// ---- Simpan PDF & Cetak: A5 portrait bila toko < TAGIHAN_A5_BATAS, selain itu A4 portrait ----
-function tgPaper(count) {
-    return count < TAGIHAN_A5_BATAS
-        ? { nama: 'A5', w: 210, h: 148, m: 5, cols: [7, 35, 37, 21, 19, 19, 22, 16, 24], pt: 6.8, ptHead: 6.3, ptTitle: 10, ptMeta: 7.8, titleH: 6, metaH: 5, rowH: 4.6, headH: 4, footH: 16, signH: 9, salesW: 72, sigW: 100, minRows: TAGIHAN_ROWS_A5 }
-        : { nama: 'A4', w: 210, h: 297, m: 8, cols: [7, 34, 36, 21, 19, 19, 22, 16, 20], pt: 8, ptHead: 7.5, ptTitle: 11, ptMeta: 9, titleH: 9, metaH: 7, rowH: 6, headH: 5, footH: 22, signH: 13, salesW: 70, sigW: 98, minRows: TAGIHAN_ROWS_A4 };
+// ---- Simpan PDF & Cetak: selalu A4 portrait ----
+function tgPaper() {
+    return { nama: 'A4', w: 210, h: 297, m: 8, cols: [7, 34, 36, 21, 19, 19, 22, 16, 20], pt: 8, ptHead: 7.5, ptTitle: 11, ptMeta: 9, titleH: 9, metaH: 7, rowH: 6, headH: 5, footH: 22, signH: 13, salesW: 70, sigW: 98, minRows: TAGIHAN_ROWS_A4 };
 }
 
 function tgUpdatePaper() {
     const el = byId('tagihan-paper');
     if (!el) return;
     const n = tgCollect().filter(tgHasData).length;
-    el.textContent = `Simpan PDF & Cetak: kertas ${tgPaper(n).nama} ${tgPaper(n).w > tgPaper(n).h ? 'landscape' : 'portrait'} (${n} toko; A5 bila kurang dari ${TAGIHAN_A5_BATAS} toko)`;
+    el.textContent = `Simpan PDF & Cetak: kertas A4 portrait (${n} toko)`;
 }
 
 // Satu halaman laporan -> canvas
@@ -3337,7 +3333,7 @@ async function tgBuatHalaman(rec, dpi) {
     const data = (rec ? rec.rows : tgCollect()).filter(tgHasData);
     if (!data.length) { if (!rec) alert('Belum ada data tagihan untuk dicetak / dijadikan PDF.'); return null; }
 
-    const p = tgPaper(data.length);
+    const p = tgPaper();
     const rows = data.slice();
     while (rows.length < p.minRows) rows.push({});
 
@@ -3401,7 +3397,7 @@ async function simpanPdfTagihan() {
 }
 
 // Kirim halaman hasil tgBuatHalaman ke printer lewat dialog cetak browser.
-// Ukuran kertas sama dengan Simpan PDF: A5 landscape bila toko < TAGIHAN_A5_BATAS, selain itu A4 portrait.
+// Ukuran kertas sama dengan Simpan PDF: selalu A4 portrait.
 async function tgCetakHasil(r, antrianId) {
     const old = byId('tagihan-print-root'); if (old) old.remove();
     const oldStyle = byId('tagihan-page-style'); if (oldStyle) oldStyle.remove();
@@ -3422,8 +3418,8 @@ async function tgCetakHasil(r, antrianId) {
 
     const pageStyle = document.createElement('style');
     pageStyle.id = 'tagihan-page-style';
-    // nama kertas baku (A5 landscape / A4 portrait) supaya dialog cetak memilih ukuran kertas yang benar
-    pageStyle.textContent = `@page { size: ${r.p.nama} ${r.p.w > r.p.h ? 'landscape' : 'portrait'}; margin: 0; }`;
+    // nama kertas baku A4 portrait supaya dialog cetak memilih ukuran kertas yang benar
+    pageStyle.textContent = '@page { size: A4 portrait; margin: 0; }';
     document.head.appendChild(pageStyle);
     document.documentElement.classList.add('printing-tagihan');
 
