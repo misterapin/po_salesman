@@ -2479,7 +2479,9 @@ function renderLaporan() {
             totalOmzet += itemSumHarga;
 
             const itemsDesc = ord.items.map(i => `${i.qty}x ${i.nama}${i.varianWarna ? ' (' + i.varianWarna + ')' : ''}`).join(', ') + (ord.catatan ? ' — 📝 ' + ord.catatan : '');
-            const waktu = new Date(ord.tanggal).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+            const dtObj = new Date(ord.tanggal);
+            const waktuTgl = dtObj.toLocaleDateString('id-ID', { dateStyle: 'medium' });
+            const waktuJam = dtObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
             const pemilik = tampilPemilik ? userLabel(ord.ownerId) : '';
 
             const dc = infoDicetak(ord.id);
@@ -2489,13 +2491,13 @@ function renderLaporan() {
 
             return `
                 <tr class="hover:bg-gray-50 transition ${dc ? 'bg-emerald-50/40' : ''}" data-dicetak="${dc ? '1' : '0'}">
-                    <td data-label="Cetak" class="py-3 px-4 text-center"><input type="checkbox" class="w-5 h-5 rounded accent-emerald-600 cursor-pointer" aria-label="Pilih ${esc(ord.noNota)} untuk dicetak" ${laporanTerpilih.has(ord.id) ? 'checked' : ''} onchange="laporanTogglePilih('${ord.id}', this.checked)"></td>
-                    <td data-label="No. Nota" class="py-3 px-4 font-mono font-bold text-gray-800">${esc(ord.noNota)}${badgeDicetak}</td>
-                    <td data-label="Waktu" class="py-3 px-4 text-gray-600 text-xs whitespace-nowrap">${esc(waktu)}</td>
-                    <td data-label="Pelanggan" class="py-3 px-4 font-semibold text-gray-800">${esc(pel.nama)}${pemilik ? `<div class="text-[11px] font-normal text-gray-500 mt-0.5"><i class="fa-solid fa-user mr-1"></i>${esc(pemilik)}</div>` : ''}</td>
-                    <td data-label="Item" class="py-3 px-4 text-gray-600 text-xs max-w-xs truncate" title="${esc(itemsDesc)}">${esc(itemsDesc)}</td>
-                    <td data-label="Subtotal" class="py-3 px-4 font-bold text-emerald-600">${formatRupiah(itemSumHarga)}</td>
-                    ${bisaAksi ? `<td data-label="Aksi" class="py-3 px-4 text-center space-x-1">
+                    <td data-label="Cetak" class="lap-c-cetak text-center"><input type="checkbox" class="w-5 h-5 rounded accent-emerald-600 cursor-pointer" aria-label="Pilih ${esc(ord.noNota)} untuk dicetak" ${laporanTerpilih.has(ord.id) ? 'checked' : ''} onchange="laporanTogglePilih('${ord.id}', this.checked)"></td>
+                    <td data-label="No. Nota" class="lap-c-nota font-mono font-bold text-gray-800 text-[13px]">${esc(ord.noNota)}${badgeDicetak}</td>
+                    <td data-label="Waktu" class="lap-c-waktu text-gray-600 text-xs"><div><div class="whitespace-nowrap">${esc(waktuTgl)}</div><div class="text-[11px] text-gray-400">${esc(waktuJam)}</div></div></td>
+                    <td data-label="Pelanggan" class="lap-c-pel font-semibold text-gray-800 text-[13px]">${esc(pel.nama)}${pemilik ? `<div class="text-[11px] font-normal text-gray-500 mt-0.5"><i class="fa-solid fa-user mr-1"></i>${esc(pemilik)}</div>` : ''}</td>
+                    <td data-label="Item" class="lap-c-item text-gray-600 text-xs" title="${esc(itemsDesc)}"><div class="lap-item-text">${esc(itemsDesc)}</div></td>
+                    <td data-label="Subtotal" class="lap-c-total font-bold text-emerald-600 text-[13px]">${formatRupiah(itemSumHarga)}</td>
+                    ${bisaAksi ? `<td data-label="Aksi" class="lap-c-aksi text-center space-x-1">
                         <button onclick="previewWhatsapp('${ord.id}')" class="bg-blue-50 text-blue-600 hover:bg-blue-100 p-1.5 rounded-lg transition" title="Lihat Nota"><i class="fa-solid fa-receipt text-base"></i></button>
                         <button onclick="editPesanan('${ord.id}')" class="text-blue-600 hover:text-blue-800 p-1.5" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
                     </td>` : ''}

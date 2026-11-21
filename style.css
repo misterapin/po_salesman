@@ -303,3 +303,21 @@ html.dark .tagihan-table tbody td::before, html.dark .tagihan-table tfoot td::be
     html.printing-tagihan .tagihan-print-page { display: block; break-after: page; page-break-after: always; }
     html.printing-tagihan .tagihan-print-page:last-child { break-after: auto; page-break-after: auto; }
 }
+
+/* ---- Rincian Transaksi (Laporan & Rekap): tabel ringkas, tidak melebar (layar >= 640px; HP tetap kartu) ---- */
+@media screen and (min-width: 640px) {
+    html body #app-shell .lap-table { table-layout: fixed; min-width: 720px; }
+    html body #app-shell .lap-table th:nth-child(1) { width: 60px; }
+    html body #app-shell .lap-table th:nth-child(2) { width: 150px; }
+    html body #app-shell .lap-table th:nth-child(3) { width: 100px; }
+    html body #app-shell .lap-table th:nth-child(4) { width: 170px; }
+    html body #app-shell .lap-table th:nth-child(6) { width: 120px; }
+    html body #app-shell .lap-table th:nth-child(7) { width: 96px; }
+    html body #app-shell .lap-table td { padding: .6rem .75rem; vertical-align: top; overflow-wrap: anywhere; }
+    html body #app-shell .lap-table td.lap-c-total { text-align: right; white-space: nowrap; }
+    html body #app-shell .lap-table td.lap-c-cetak { padding-top: .75rem; }
+    html body #app-shell .lap-table .lap-item-text {
+        display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+        overflow: hidden; line-height: 1.45;
+    }
+}
